@@ -489,24 +489,66 @@ function EditModal({ item, onSave, onClose }) {
     onSave(form);
   };
 
-  const inputStyle = { width: '100%', padding: '10px 12px', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', background: '#FFFFFF' };
-  const selectStyle = { ...inputStyle, cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none', paddingRight: 32, backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4 L6 8 L10 4' stroke='%235F5E5A' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' };
-  const labelStyle = { fontSize: 11, color: '#5F5E5A', marginBottom: 4, display: 'block', fontWeight: 500 };
+  const inputStyle = {
+    width: '100%',
+    padding: '14px 14px',
+    border: 'none',
+    borderRadius: 10,
+    fontSize: 15,
+    fontFamily: 'inherit',
+    boxSizing: 'border-box',
+    background: '#F4F2EC',
+    color: '#1A1A1A',
+    outline: 'none'
+  };
+  const selectStyle = {
+    ...inputStyle,
+    cursor: 'pointer',
+    appearance: 'none',
+    WebkitAppearance: 'none',
+    paddingRight: 36,
+    backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4 L6 8 L10 4' stroke='%235F5E5A' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>\")",
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: 'right 14px center'
+  };
+  const labelStyle = { fontSize: 13, color: '#5F5E5A', marginBottom: 6, display: 'block', fontWeight: 500 };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h3 style={{ fontSize: 18, fontWeight: 500, margin: 0 }}>{isEdit ? '콘텐츠 수정' : '새 콘텐츠'}</h3>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: 22, cursor: 'pointer', color: '#5F5E5A', padding: '0 4px', lineHeight: 1 }}>×</button>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ padding: 0, overflow: 'hidden', maxWidth: 480, display: 'flex', flexDirection: 'column' }}>
+        {/* 헤더 */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 14px 14px 20px', borderBottom: '0.5px solid rgba(0,0,0,0.06)' }}>
+          <h3 style={{ fontSize: 17, fontWeight: 600, margin: 0 }}>{isEdit ? '콘텐츠 수정' : '새 콘텐츠'}</h3>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: 22, cursor: 'pointer', color: '#1A1A1A', padding: 4, lineHeight: 1 }} aria-label="닫기">×</button>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div>
-            <label style={labelStyle}>제목 *</label>
-            <input type="text" value={form.title} onChange={(e) => handleChange('title', e.target.value)} style={inputStyle} autoFocus placeholder="콘텐츠 제목" />
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+        {/* 본문 (스크롤) */}
+        <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
+          {/* 제목 — 큰 입력 (가장 중요한 필드) */}
+          <input
+            type="text"
+            value={form.title}
+            onChange={(e) => handleChange('title', e.target.value)}
+            placeholder="제목을 입력하세요"
+            autoFocus
+            style={{
+              width: '100%',
+              padding: '12px 0',
+              border: 'none',
+              borderBottom: '0.5px solid rgba(0,0,0,0.18)',
+              fontSize: 20,
+              fontWeight: 500,
+              fontFamily: 'inherit',
+              boxSizing: 'border-box',
+              background: 'transparent',
+              outline: 'none',
+              color: '#1A1A1A',
+              marginBottom: 20
+            }}
+          />
+
+          {/* 발행일 + 시간 */}
+          <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
             <div style={{ flex: 1 }}>
               <label style={labelStyle}>발행일</label>
               <input type="date" value={form.date} onChange={(e) => handleChange('date', e.target.value)} style={inputStyle} />
@@ -516,19 +558,42 @@ function EditModal({ item, onSave, onClose }) {
               <input type="time" value={form.time} onChange={(e) => handleChange('time', e.target.value)} style={inputStyle} />
             </div>
           </div>
-          <div>
+
+          {/* 채널 */}
+          <div style={{ marginBottom: 8 }}>
             <label style={labelStyle}>채널</label>
             <select value={form.channel} onChange={(e) => handleChannelChange(e.target.value)} style={selectStyle}>
               {CHANNEL_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
             </select>
           </div>
 
-          <button type="button" onClick={() => setShowMore(s => !s)} style={{ background: 'transparent', border: 'none', padding: '6px 0', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', color: '#5F5E5A', textAlign: 'left' }}>
-            {showMore ? '▼' : '▶'} 더보기 (키워드·자산·핵심)
+          {/* 더보기 토글 */}
+          <button
+            type="button"
+            onClick={() => setShowMore(s => !s)}
+            style={{
+              width: '100%',
+              background: 'transparent',
+              border: 'none',
+              padding: '14px 0',
+              cursor: 'pointer',
+              fontSize: 13,
+              fontFamily: 'inherit',
+              color: '#5F5E5A',
+              textAlign: 'left',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              borderTop: '0.5px solid rgba(0,0,0,0.06)',
+              marginTop: 8
+            }}
+          >
+            <span>키워드·자산·핵심 콘텐츠</span>
+            <span style={{ fontSize: 11, color: '#888780' }}>{showMore ? '▲' : '▼'}</span>
           </button>
 
           {showMore && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingLeft: 12, borderLeft: '2px solid rgba(0,0,0,0.06)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div>
                 <label style={labelStyle}>메인 키워드</label>
                 <input type="text" value={form.mainKeyword || ''} onChange={(e) => handleChange('mainKeyword', e.target.value)} style={inputStyle} placeholder="예: 어버이날 카네이션" />
@@ -536,29 +601,75 @@ function EditModal({ item, onSave, onClose }) {
               <div>
                 <label style={labelStyle}>강도</label>
                 <select value={form.strength || ''} onChange={(e) => handleChange('strength', e.target.value)} style={selectStyle}>
-                  {STRENGTH_OPTIONS.map(opt => <option key={opt} value={opt}>{opt || '— 선택 —'}</option>)}
+                  {STRENGTH_OPTIONS.map(opt => <option key={opt} value={opt}>{opt || '선택 안 함'}</option>)}
                 </select>
               </div>
               <div>
                 <label style={labelStyle}>자산</label>
                 <input type="text" value={form.asset || ''} onChange={(e) => handleChange('asset', e.target.value)} style={inputStyle} placeholder="예: 5/3 펜던트 시공 영상" />
               </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
-                <input type="checkbox" checked={!!form.isCore} onChange={(e) => handleChange('isCore', e.target.checked)} />
-                <span>★ 핵심 콘텐츠</span>
+
+              {/* 토스 스타일 토글 스위치 */}
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', padding: '4px 0' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <span style={{ fontSize: 15, color: '#1A1A1A' }}>★ 핵심 콘텐츠</span>
+                  <span style={{ fontSize: 12, color: '#888780' }}>시리즈 메인으로 강조 표시</span>
+                </div>
+                <div style={{
+                  position: 'relative',
+                  width: 44,
+                  height: 26,
+                  background: form.isCore ? '#1A1A1A' : '#D4D2CC',
+                  borderRadius: 13,
+                  transition: 'background 0.2s',
+                  flexShrink: 0
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={!!form.isCore}
+                    onChange={(e) => handleChange('isCore', e.target.checked)}
+                    style={{ opacity: 0, position: 'absolute', inset: 0, cursor: 'pointer' }}
+                  />
+                  <div style={{
+                    position: 'absolute',
+                    top: 3,
+                    left: form.isCore ? 21 : 3,
+                    width: 20,
+                    height: 20,
+                    background: '#FFFFFF',
+                    borderRadius: '50%',
+                    transition: 'left 0.2s',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.15)'
+                  }} />
+                </div>
               </label>
             </div>
           )}
         </div>
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 24, justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={{ background: 'transparent', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '10px 18px', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', color: '#5F5E5A' }}>취소</button>
-          <button onClick={handleSave} style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', borderRadius: 8, padding: '10px 18px', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', fontWeight: 500 }}>{isEdit ? '저장' : '추가'}</button>
+        {/* 메인 액션 — 토스 스타일 풀폭 버튼 */}
+        <div style={{ padding: '12px 16px 16px', borderTop: '0.5px solid rgba(0,0,0,0.06)' }}>
+          <button
+            onClick={handleSave}
+            style={{
+              width: '100%',
+              background: '#1A1A1A',
+              color: '#FFFFFF',
+              border: 'none',
+              borderRadius: 12,
+              padding: '15px',
+              cursor: 'pointer',
+              fontSize: 15,
+              fontFamily: 'inherit',
+              fontWeight: 600
+            }}
+          >{isEdit ? '저장' : '추가'}</button>
         </div>
       </div>
     </div>
   );
 }
+
 
 function DeleteSheet({ itemTitle, onCancel, onConfirm }) {
   return (
