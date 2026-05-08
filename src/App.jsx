@@ -430,8 +430,8 @@ export default function App({ session }) {
         .month-title { font-size: 20px; font-weight: 600; margin: 0 0 2px; }
         .user-email { font-size: 12px; color: #5F5E5A; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-        .view-toggle { display: flex; gap: 0; background: #FFFFFF; border-radius: 10px; padding: 3px; max-width: 320px; }
-        .view-toggle-btn { flex: 1; padding: 8px 14px; background: transparent; border: none; cursor: pointer; font-size: 13px; font-family: inherit; color: #5F5E5A; border-radius: 8px; transition: all 0.15s; font-weight: 500; }
+        .view-toggle { display: flex; gap: 0; background: #FFFFFF; border-radius: 10px; padding: 3px; }
+        .view-toggle-btn { flex: 1; padding: 8px 10px; background: transparent; border: none; cursor: pointer; font-size: 13px; font-family: inherit; color: #5F5E5A; border-radius: 8px; transition: all 0.15s; font-weight: 500; white-space: nowrap; }
         .view-toggle-btn.active { background: #1A1A1A; color: #FFFFFF; }
         .view-toggle-btn:hover:not(.active) { color: #1A1A1A; }
 
@@ -619,18 +619,33 @@ export default function App({ session }) {
             <div className="filter-section">
               <div className="filter-section-label">채널</div>
               <div className="filter-chips">
-                {CHANNEL_OPTIONS.map(opt => {
-                  const c = COLORS[opt.value] || { bg: '#F0F0EB', fg: '#1A1A1A' };
-                  const active = filterChannels.has(opt.value);
-                  return (
-                    <button
-                      key={opt.value}
-                      onClick={() => toggleChannelFilter(opt.value)}
-                      className={`filter-chip ${active ? 'active' : ''}`}
-                      style={active ? { background: c.bg, color: c.fg, borderColor: c.fg } : {}}
-                    >{opt.shortLabel || opt.label}</button>
-                  );
-                })}
+                {(() => {
+                  const seen = new Set();
+                  return CHANNEL_OPTIONS.filter(opt => {
+                    if (seen.has(opt.shortLabel)) return false;
+                    seen.add(opt.shortLabel);
+                    return true;
+                  }).map(opt => {
+                    const sameGroup = CHANNEL_OPTIONS.filter(o => o.shortLabel === opt.shortLabel);
+                    const c = COLORS[opt.value] || { bg: '#F0F0EB', fg: '#1A1A1A' };
+                    const active = sameGroup.some(o => filterChannels.has(o.value));
+                    return (
+                      <button
+                        key={opt.shortLabel}
+                        onClick={() => {
+                          setFilterChannels(prev => {
+                            const next = new Set(prev);
+                            if (active) sameGroup.forEach(o => next.delete(o.value));
+                            else sameGroup.forEach(o => next.add(o.value));
+                            return next;
+                          });
+                        }}
+                        className={`filter-chip ${active ? 'active' : ''}`}
+                        style={active ? { background: c.bg, color: c.fg, borderColor: c.fg } : {}}
+                      >{opt.shortLabel}</button>
+                    );
+                  });
+                })()}
               </div>
             </div>
             <div className="filter-section">
@@ -1381,18 +1396,24 @@ function KPIView({ items, currentMonth }) {
   const completed = items.filter(it => it.completed).length;
   const completionRate = total > 0 ? Math.round(completed / total * 100) : 0;
 
-  // 채널별 집계
-  const byChannel = {};
+  // 채널별 집계 — shortLabel 기준으로 그룹핑
+  const byShortLabel = {};
   CHANNEL_OPTIONS.forEach(opt => {
-    byChannel[opt.value] = { label: opt.label, shortLabel: opt.shortLabel || opt.label, total: 0, done: 0, color: COLORS[opt.value] || { bg: '#F0F0EB' } };
-  });
-  items.forEach(it => {
-    if (byChannel[it.channel]) {
-      byChannel[it.channel].total += 1;
-      if (it.completed) byChannel[it.channel].done += 1;
+    const key = opt.shortLabel || opt.label;
+    if (!byShortLabel[key]) {
+      byShortLabel[key] = { shortLabel: key, total: 0, done: 0, color: COLORS[opt.value] || { bg: '#F0F0EB', fg: '#5F5E5A' } };
     }
   });
-  const channelStats = Object.values(byChannel).filter(c => c.total > 0).sort((a, b) => b.total - a.total);
+  items.forEach(it => {
+    const opt = CHANNEL_OPTIONS.find(o => o.value === it.channel);
+    if (!opt) return;
+    const key = opt.shortLabel || opt.label;
+    if (byShortLabel[key]) {
+      byShortLabel[key].total += 1;
+      if (it.completed) byShortLabel[key].done += 1;
+    }
+  });
+  const channelStats = Object.values(byShortLabel).filter(c => c.total > 0).sort((a, b) => b.total - a.total);
 
   // 핵심 vs 일반
   const coreItems = items.filter(it => it.isCore);
@@ -1463,11 +1484,11 @@ function KPIView({ items, currentMonth }) {
           {channelStats.map(ch => {
             const rate = ch.total > 0 ? Math.round(ch.done / ch.total * 100) : 0;
             return (
-              <div key={ch.label}>
+              <div key={ch.shortLabel}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                     <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: ch.color.fg || '#5F5E5A', flexShrink: 0 }} />
-                    <span style={{ fontSize: 13, color: '#1A1A1A', fontWeight: 500 }}>{ch.shortLabel || ch.label}</span>
+                    <span style={{ fontSize: 13, color: '#1A1A1A', fontWeight: 500 }}>{ch.shortLabel}</span>
                   </div>
                   <span style={{ fontSize: 12, color: '#5F5E5A' }}>{ch.done}/{ch.total}편 · {rate}%</span>
                 </div>
