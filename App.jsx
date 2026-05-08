@@ -15,9 +15,9 @@ const COLORS = {
 };
 
 const CHANNEL_OPTIONS = [
-  { value: 'moment-insta-star', label: 'moment.in 인스타 (시리즈)', shortLabel: '인스타 시리즈', skill: 'momentin-insta-writer' },
-  { value: 'moment-insta-daily', label: 'moment.in 인스타 (데일리)', shortLabel: '인스타 데일리', skill: 'momentin-insta-writer' },
-  { value: 'moment-blog', label: 'moment_in 블로그', shortLabel: 'moment.in 블로그', skill: 'momentin-blog-writer' },
+  { value: 'moment-insta-star', label: 'moment.in 인스타 (시리즈)', shortLabel: '인스타', skill: 'momentin-insta-writer' },
+  { value: 'moment-insta-daily', label: 'moment.in 인스타 (데일리)', shortLabel: '인스타', skill: 'momentin-insta-writer' },
+  { value: 'moment-blog', label: 'moment_in 블로그', shortLabel: '블로그', skill: 'momentin-blog-writer' },
   { value: 'moment-todayhouse', label: 'moment.in 오늘의집', shortLabel: '오늘의집', skill: 'momentin-todayhouse-writer' },
   { value: 'moment-pin', label: 'moment.in 핀터레스트', shortLabel: '핀터레스트', skill: 'momentin-pinterest-writer' },
   { value: 'ohana-blog', label: 'ohana_story 블로그', shortLabel: 'ohana 블로그', skill: 'ohana-blog-writer' },
@@ -423,7 +423,8 @@ export default function App({ session }) {
         .cal-item.dragging { opacity: 0.3; transform: scale(0.95); }
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 1000; }
         .modal-content { background: #FFFFFF; border-radius: 12px; padding: 22px; max-width: 480px; width: 100%; max-height: 90vh; overflow: auto; }
-        .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; gap: 10px; }
+        .header-row { display: flex; flex-direction: column; gap: 8px; margin-bottom: 1rem; }
+        .header-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
         .header-nav { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
         .header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
         .month-title { font-size: 20px; font-weight: 600; margin: 0 0 2px; }
@@ -462,8 +463,8 @@ export default function App({ session }) {
         .kpi-card-sub { font-size: 11px; margin-top: 4px; }
         .kpi-card-full { background: #FFFFFF; border-radius: 12px; padding: 18px; }
         .kpi-card-title { font-size: 14px; font-weight: 600; margin-bottom: 14px; color: #1A1A1A; }
-        .kpi-bar-track { width: 100%; height: 8px; background: #EBEBEB; border-radius: 4px; overflow: hidden; }
-        .kpi-bar-fill { height: 100%; transition: width 0.4s ease-out; border-radius: 4px; min-width: 4px; }
+        .kpi-bar-track { width: 100%; height: 10px; background: #D8D5CC; border-radius: 5px; overflow: hidden; position: relative; }
+        .kpi-bar-fill { height: 100%; transition: width 0.4s ease-out; border-radius: 5px; }
 
         .list-view { display: flex; flex-direction: column; gap: 8px; }
         .list-day { background: #FFFFFF; border-radius: 12px; overflow: hidden; transition: box-shadow 0.15s; }
@@ -493,8 +494,9 @@ export default function App({ session }) {
         .list-item-meta { font-size: 11px; color: #888780; margin-top: 3px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         .list-empty { padding: 40px 20px; text-align: center; color: #888780; font-size: 13px; }
 
-        .week-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; width: 100%; }
-        .week-cell { background: #FFFFFF; border-radius: 8px; padding: 10px 8px; min-height: 320px; display: flex; flex-direction: column; width: 100%; overflow: hidden; }
+        .week-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .week-grid { display: grid; grid-template-columns: repeat(7, minmax(120px, 1fr)); gap: 4px; width: 100%; min-width: 700px; }
+        .week-cell { background: #FFFFFF; border-radius: 8px; padding: 10px 8px; min-height: 320px; display: flex; flex-direction: column; overflow: hidden; }
         .week-cell.holiday { background: #FAF9F5; }
         .week-cell-header { padding-bottom: 8px; border-bottom: 0.5px solid rgba(0,0,0,0.06); margin-bottom: 8px; }
         .week-cell-day { font-size: 18px; font-weight: 600; }
@@ -511,9 +513,7 @@ export default function App({ session }) {
           .cal-item { font-size: 9px; padding: 2px 4px; }
           .modal-overlay { padding: 0; align-items: flex-end; }
           .modal-content { border-radius: 16px 16px 0 0; max-height: 92vh; padding: 18px; max-width: 100%; }
-          .header-row { flex-direction: column; align-items: stretch; gap: 10px; }
-          .header-nav { justify-content: flex-start; }
-          .header-actions { justify-content: flex-start; gap: 8px; }
+          .header-row { gap: 6px; }
           .month-title { font-size: 17px; }
           .user-email { font-size: 11px; max-width: 100%; }
           .cal-grid { gap: 2px; }
@@ -548,19 +548,21 @@ export default function App({ session }) {
 
       <div style={{ maxWidth: 1100, margin: '0 auto' }}>
         <div className="header-row">
-          <div className="header-nav">
-            <button onClick={prevMonth} style={navBtnStyle} aria-label="이전">‹</button>
-            <div style={{ minWidth: 110, textAlign: 'center' }}>
-              <h1 className="month-title">{yearNum}년 {monthNum}월</h1>
-              <p style={{ fontSize: 11, color: '#5F5E5A', margin: 0 }}>moment.in × ohana</p>
+          <div className="header-top">
+            <div className="header-nav">
+              <button onClick={prevMonth} style={navBtnStyle} aria-label="이전">‹</button>
+              <div style={{ minWidth: 110, textAlign: 'center' }}>
+                <h1 className="month-title">{yearNum}년 {monthNum}월</h1>
+                <p style={{ fontSize: 11, color: '#5F5E5A', margin: 0 }}>moment.in × ohana</p>
+              </div>
+              <button onClick={nextMonth} style={navBtnStyle} aria-label="다음">›</button>
+              <button onClick={goToday} style={{ ...navBtnStyle, width: 'auto', padding: '6px 10px', fontSize: 12, color: '#5F5E5A' }}>오늘</button>
             </div>
-            <button onClick={nextMonth} style={navBtnStyle} aria-label="다음">›</button>
-            <button onClick={goToday} style={{ ...navBtnStyle, width: 'auto', padding: '6px 10px', fontSize: 12, color: '#5F5E5A' }}>오늘</button>
-          </div>
-          <div className="header-actions">
-            <button onClick={() => setEditingItem(newItemDefaults())} style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', borderRadius: 8, padding: '8px 12px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, whiteSpace: 'nowrap' }}>+ 새 콘텐츠</button>
-            <span className="user-email">{userEmail}</span>
-            <button onClick={handleSignOut} style={{ background: 'transparent', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer', whiteSpace: 'nowrap' }}>로그아웃</button>
+            <div className="header-actions">
+              <button onClick={() => setEditingItem(newItemDefaults())} style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', borderRadius: 8, padding: '8px 12px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, whiteSpace: 'nowrap' }}>+ 새 콘텐츠</button>
+              <span className="user-email">{userEmail}</span>
+              <button onClick={handleSignOut} style={{ background: 'transparent', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer', whiteSpace: 'nowrap' }}>로그아웃</button>
+            </div>
           </div>
         </div>
 
@@ -1304,8 +1306,9 @@ function WeekView({ weekStart, setWeekStart, items, holidays, anniversaries, onI
         <button onClick={nextWeek} style={{ ...weekNavBtn, fontSize: 14 }}>›</button>
         <button onClick={thisWeek} style={{ ...weekNavBtn, width: 'auto', padding: '4px 10px', fontSize: 12 }}>이번 주</button>
       </div>
-      <div className="week-grid">
-        {weekDates.map(wd => {
+      <div className="week-scroll">
+        <div className="week-grid">
+          {weekDates.map(wd => {
           const dayItems = items.filter(it => it.date === wd.dateStr);
           const holiday = holidays[wd.dateStr];
           const anniversary = anniversaries[wd.dateStr];
@@ -1348,6 +1351,7 @@ function WeekView({ weekStart, setWeekStart, items, holidays, anniversaries, onI
             </div>
           );
         })}
+        </div>
       </div>
     </>
   );
@@ -1380,7 +1384,7 @@ function KPIView({ items, currentMonth }) {
   // 채널별 집계
   const byChannel = {};
   CHANNEL_OPTIONS.forEach(opt => {
-    byChannel[opt.value] = { label: opt.label, total: 0, done: 0, color: COLORS[opt.value] || { bg: '#F0F0EB' } };
+    byChannel[opt.value] = { label: opt.label, shortLabel: opt.shortLabel || opt.label, total: 0, done: 0, color: COLORS[opt.value] || { bg: '#F0F0EB' } };
   });
   items.forEach(it => {
     if (byChannel[it.channel]) {
@@ -1463,7 +1467,7 @@ function KPIView({ items, currentMonth }) {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                     <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: ch.color.fg || '#5F5E5A', flexShrink: 0 }} />
-                    <span style={{ fontSize: 13, color: '#1A1A1A', fontWeight: 500 }}>{ch.label}</span>
+                    <span style={{ fontSize: 13, color: '#1A1A1A', fontWeight: 500 }}>{ch.shortLabel || ch.label}</span>
                   </div>
                   <span style={{ fontSize: 12, color: '#5F5E5A' }}>{ch.done}/{ch.total}편 · {rate}%</span>
                 </div>
