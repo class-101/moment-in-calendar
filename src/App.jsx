@@ -64,6 +64,7 @@ const dbToItem = (row) => ({
   strength: row.strength,
   asset: row.asset,
   nextSkill: row.next_skill,
+  description: row.description || '',
   completed: row.completed
 });
 
@@ -81,6 +82,7 @@ const itemToDb = (item, userId) => ({
   strength: item.strength || null,
   asset: item.asset || null,
   next_skill: item.nextSkill || null,
+  description: item.description || null,
   completed: !!item.completed
 });
 
@@ -101,7 +103,7 @@ export default function App({ session }) {
   const [draggingId, setDraggingId] = useState(null);
   const [dragOverDate, setDragOverDate] = useState(null);
 
-  // 뷰 모드: 'month' | 'week' | 'list'
+  // 뷰 모드: 'month' | 'week' | 'list' | 'kpi'
   const [viewMode, setViewMode] = useState(() => {
     if (typeof window !== 'undefined' && window.innerWidth <= 640) return 'list';
     return 'month';
@@ -113,6 +115,13 @@ export default function App({ session }) {
     return d;
   });
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth <= 640 : false);
+
+  // 검색·필터
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterChannels, setFilterChannels] = useState(new Set()); // 빈 Set = 전체
+  const [filterCompleted, setFilterCompleted] = useState('all'); // 'all' | 'todo' | 'done'
+  const [filterCore, setFilterCore] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
 
   useEffect(() => {
     const onResize = () => {
@@ -311,6 +320,31 @@ export default function App({ session }) {
     return () => clearTimeout(timer);
   }, [performance, userId, items]);
 
+  // 필터 적용
+  const applyFilters = (allItems) => {
+    return allItems.filter(it => {
+      // 검색어
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        const matchTitle = (it.title || '').toLowerCase().includes(q);
+        const matchKeyword = (it.mainKeyword || '').toLowerCase().includes(q);
+        const matchAsset = (it.asset || '').toLowerCase().includes(q);
+        const matchDesc = (it.description || '').toLowerCase().includes(q);
+        if (!matchTitle && !matchKeyword && !matchAsset && !matchDesc) return false;
+      }
+      // 채널 필터
+      if (filterChannels.size > 0 && !filterChannels.has(it.channel)) return false;
+      // 완료 여부
+      if (filterCompleted === 'todo' && it.completed) return false;
+      if (filterCompleted === 'done' && !it.completed) return false;
+      // 핵심만
+      if (filterCore && !it.isCore) return false;
+      return true;
+    });
+  };
+  const filteredItems = applyFilters(items);
+  const isFiltered = searchQuery || filterChannels.size > 0 || filterCompleted !== 'all' || filterCore;
+
   // 캘린더 그리드
   const [yearStr, monthStr] = currentMonth.split('-');
   const yearNum = parseInt(yearStr, 10);
@@ -324,9 +358,24 @@ export default function App({ session }) {
     const dateStr = `${yearStr}-${monthStr}-${String(d).padStart(2, '0')}`;
     const dt = new Date(yearNum, monthNum - 1, d);
     const dow = dt.getDay();
-    const dayItems = items.filter(it => it.date === dateStr);
+    const dayItems = filteredItems.filter(it => it.date === dateStr);
     cells.push({ empty: false, key: dateStr, day: d, dow, dateStr, dayItems, holiday: HOLIDAYS[dateStr], anniversary: ANNIVERSARIES[dateStr] });
   }
+
+  const toggleChannelFilter = (channel) => {
+    setFilterChannels(prev => {
+      const next = new Set(prev);
+      if (next.has(channel)) next.delete(channel);
+      else next.add(channel);
+      return next;
+    });
+  };
+  const clearAllFilters = () => {
+    setSearchQuery('');
+    setFilterChannels(new Set());
+    setFilterCompleted('all');
+    setFilterCore(false);
+  };
 
   const prevMonth = () => {
     const d = new Date(yearNum, monthNum - 2, 1);
@@ -339,13 +388,13 @@ export default function App({ session }) {
   const goToday = () => setCurrentMonth(todayYM);
   const handleSignOut = () => supabase.auth.signOut();
 
-  const newItemDefaults = () => ({
+  const newItemDefaults = (initialDate) => ({
     id: '', title: '',
-    date: `${currentMonth}-01`, time: '21:00',
+    date: initialDate || `${currentMonth}-01`, time: '21:00',
     channel: 'moment-insta-daily',
     channelName: 'moment.in 인스타 (데일리)',
     isCore: false, mainKeyword: '', subKeywords: [], strength: '', asset: '',
-    nextSkill: 'momentin-insta-writer', completed: false
+    nextSkill: 'momentin-insta-writer', description: '', completed: false
   });
 
   return (
@@ -380,10 +429,41 @@ export default function App({ session }) {
         .month-title { font-size: 20px; font-weight: 600; margin: 0 0 2px; }
         .user-email { font-size: 12px; color: #5F5E5A; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-        .view-toggle { display: flex; gap: 0; background: #FFFFFF; border-radius: 10px; padding: 3px; margin-bottom: 1rem; max-width: 280px; }
+        .view-toggle { display: flex; gap: 0; background: #FFFFFF; border-radius: 10px; padding: 3px; max-width: 320px; }
         .view-toggle-btn { flex: 1; padding: 8px 14px; background: transparent; border: none; cursor: pointer; font-size: 13px; font-family: inherit; color: #5F5E5A; border-radius: 8px; transition: all 0.15s; font-weight: 500; }
         .view-toggle-btn.active { background: #1A1A1A; color: #FFFFFF; }
         .view-toggle-btn:hover:not(.active) { color: #1A1A1A; }
+
+        .control-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 1rem; }
+        .search-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .search-box { display: flex; align-items: center; gap: 6px; background: #FFFFFF; border-radius: 10px; padding: 8px 12px; min-width: 200px; }
+        .search-input { border: none; outline: none; background: transparent; font-size: 13px; font-family: inherit; flex: 1; min-width: 100px; color: #1A1A1A; }
+        .search-input::placeholder { color: #888780; }
+        .search-clear { background: transparent; border: none; cursor: pointer; color: #888780; font-size: 16px; padding: 0 4px; line-height: 1; font-family: inherit; }
+        .filter-btn { background: #FFFFFF; border: none; border-radius: 10px; padding: 8px 14px; cursor: pointer; font-size: 13px; font-family: inherit; color: #5F5E5A; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
+        .filter-btn.active { color: #1A1A1A; font-weight: 600; }
+        .filter-dot { width: 6px; height: 6px; border-radius: 50%; background: #D4537E; display: inline-block; }
+        .filter-clear-btn { background: transparent; border: none; cursor: pointer; font-size: 12px; font-family: inherit; color: #888780; padding: 6px 8px; }
+        .filter-clear-btn:hover { color: #D4537E; }
+
+        .filter-panel { background: #FFFFFF; border-radius: 12px; padding: 16px; margin-bottom: 1rem; display: flex; flex-direction: column; gap: 14px; }
+        .filter-section-label { font-size: 12px; color: #888780; font-weight: 500; margin-bottom: 8px; }
+        .filter-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+        .filter-chip { background: #F4F2EC; border: 1px solid transparent; border-radius: 16px; padding: 6px 12px; font-size: 12px; font-family: inherit; color: #5F5E5A; cursor: pointer; transition: all 0.15s; }
+        .filter-chip:hover { background: #E8E5DC; }
+        .filter-chip.active { background: #1A1A1A; color: #FFFFFF; }
+
+        .filter-result-count { font-size: 12px; color: #5F5E5A; padding: 6px 4px 12px; }
+
+        .kpi-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+        .kpi-card { background: #FFFFFF; border-radius: 12px; padding: 16px; }
+        .kpi-card-label { font-size: 12px; color: #888780; margin-bottom: 6px; }
+        .kpi-card-value { font-size: 22px; font-weight: 600; line-height: 1.1; }
+        .kpi-card-sub { font-size: 11px; margin-top: 4px; }
+        .kpi-card-full { background: #FFFFFF; border-radius: 12px; padding: 18px; }
+        .kpi-card-title { font-size: 14px; font-weight: 600; margin-bottom: 14px; color: #1A1A1A; }
+        .kpi-bar-track { width: 100%; height: 12px; background: #F4F2EC; border-radius: 6px; overflow: hidden; }
+        .kpi-bar-fill { height: 100%; transition: width 0.4s ease-out; }
 
         .list-view { display: flex; flex-direction: column; gap: 8px; }
         .list-day { background: #FFFFFF; border-radius: 12px; overflow: hidden; transition: box-shadow 0.15s; }
@@ -401,6 +481,8 @@ export default function App({ session }) {
         .list-day-event { font-size: 12px; color: #888780; }
         .list-day-event.holiday { color: #D4537E; }
         .list-day-count { font-size: 12px; color: #5F5E5A; padding: 3px 8px; background: #F4F2EC; border-radius: 10px; font-weight: 500; }
+        .list-day-add-btn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; background: #F4F2EC; color: #5F5E5A; border-radius: 50%; cursor: pointer; font-size: 16px; line-height: 1; user-select: none; transition: background 0.1s, color 0.1s; }
+        .list-day-add-btn:hover { background: #1A1A1A; color: #FFFFFF; }
         .list-items { padding: 4px 0 8px; }
         .list-item { display: flex; gap: 10px; padding: 10px 16px; cursor: pointer; align-items: center; transition: background 0.1s; border: none; background: transparent; width: 100%; text-align: left; font-family: inherit; }
         .list-item:hover { background: #F8F8F6; }
@@ -435,8 +517,11 @@ export default function App({ session }) {
           .cal-grid { gap: 2px; }
           .dow-row { gap: 2px; }
           .dow-row > div { font-size: 10px; padding: 4px 0; }
+          .control-bar { flex-direction: column; align-items: stretch; gap: 8px; }
           .view-toggle { max-width: 100%; }
-          .view-toggle-btn { padding: 8px 10px; font-size: 12px; }
+          .view-toggle-btn { padding: 8px 8px; font-size: 12px; }
+          .search-filter { width: 100%; }
+          .search-box { flex: 1; min-width: 0; }
           .week-cell { min-height: 240px; padding: 8px 5px; }
           .week-cell-day { font-size: 15px; }
           .week-item { font-size: 10px; padding: 4px 5px; }
@@ -445,6 +530,7 @@ export default function App({ session }) {
           .list-day-count { font-size: 11px; padding: 2px 7px; }
           .list-item { padding: 10px 14px; gap: 8px; }
           .list-item-title { font-size: 13px; }
+          .kpi-cards { grid-template-columns: repeat(2, 1fr); }
         }
         @media (max-width: 380px) {
           .cal-cell { min-height: 80px; max-height: 120px; padding: 4px 3px; }
@@ -476,20 +562,107 @@ export default function App({ session }) {
           </div>
         </div>
 
-        {/* 뷰 토글 버튼 */}
-        <div className="view-toggle">
-          {[
-            { value: 'month', label: '월간' },
-            { value: 'week', label: '주간' },
-            { value: 'list', label: '리스트' }
-          ].map(opt => (
+        {/* 뷰 토글 + 검색·필터 */}
+        <div className="control-bar">
+          <div className="view-toggle">
+            {[
+              { value: 'month', label: '월간' },
+              { value: 'week', label: '주간' },
+              { value: 'list', label: '리스트' },
+              { value: 'kpi', label: 'KPI' }
+            ].map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setViewMode(opt.value)}
+                className={`view-toggle-btn ${viewMode === opt.value ? 'active' : ''}`}
+              >{opt.label}</button>
+            ))}
+          </div>
+
+          <div className="search-filter">
+            <div className="search-box">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0 }}>
+                <circle cx="6" cy="6" r="4.5" stroke="#888780" strokeWidth="1.3" fill="none" />
+                <path d="M9.5 9.5 L12 12" stroke="#888780" strokeWidth="1.3" strokeLinecap="round" />
+              </svg>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="검색"
+                className="search-input"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="search-clear" aria-label="검색 지우기">×</button>
+              )}
+            </div>
             <button
-              key={opt.value}
-              onClick={() => setViewMode(opt.value)}
-              className={`view-toggle-btn ${viewMode === opt.value ? 'active' : ''}`}
-            >{opt.label}</button>
-          ))}
+              onClick={() => setFilterOpen(!filterOpen)}
+              className={`filter-btn ${(filterChannels.size > 0 || filterCompleted !== 'all' || filterCore) ? 'active' : ''}`}
+              title="필터"
+            >
+              필터{(filterChannels.size > 0 || filterCompleted !== 'all' || filterCore) && <span className="filter-dot" />}
+            </button>
+            {isFiltered && (
+              <button onClick={clearAllFilters} className="filter-clear-btn">초기화</button>
+            )}
+          </div>
         </div>
+
+        {/* 필터 패널 */}
+        {filterOpen && (
+          <div className="filter-panel">
+            <div className="filter-section">
+              <div className="filter-section-label">채널</div>
+              <div className="filter-chips">
+                {CHANNEL_OPTIONS.map(opt => {
+                  const c = COLORS[opt.value] || { bg: '#F0F0EB', fg: '#1A1A1A' };
+                  const active = filterChannels.has(opt.value);
+                  return (
+                    <button
+                      key={opt.value}
+                      onClick={() => toggleChannelFilter(opt.value)}
+                      className={`filter-chip ${active ? 'active' : ''}`}
+                      style={active ? { background: c.bg, color: c.fg, borderColor: c.fg } : {}}
+                    >{opt.label.replace('moment.in 인스타 ', '').replace('moment.in ', '').replace('moment_in ', '').replace('ohana.yyy ', '오하나 인스타 ').replace('ohana_story ', '오하나 ')}</button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="filter-section">
+              <div className="filter-section-label">상태</div>
+              <div className="filter-chips">
+                {[
+                  { value: 'all', label: '전체' },
+                  { value: 'todo', label: '미발행' },
+                  { value: 'done', label: '발행 완료' }
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setFilterCompleted(opt.value)}
+                    className={`filter-chip ${filterCompleted === opt.value ? 'active' : ''}`}
+                  >{opt.label}</button>
+                ))}
+              </div>
+            </div>
+            <div className="filter-section">
+              <div className="filter-section-label">유형</div>
+              <div className="filter-chips">
+                <button
+                  onClick={() => setFilterCore(c => !c)}
+                  className={`filter-chip ${filterCore ? 'active' : ''}`}
+                >★ 핵심 콘텐츠만</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 필터 결과 카운트 */}
+        {isFiltered && (
+          <div className="filter-result-count">
+            {filteredItems.length}편 표시됨 · 전체 {items.length}편
+          </div>
+        )}
 
         {loading && <div style={{ padding: 20, textAlign: 'center', color: '#5F5E5A', fontSize: 13 }}>불러오는 중...</div>}
         {error && <div style={{ padding: 12, background: '#FAF0F4', color: '#D4537E', borderRadius: 8, fontSize: 13, marginBottom: 12 }}>오류: {error}</div>}
@@ -509,6 +682,12 @@ export default function App({ session }) {
                     onDragOver={(e) => handleDragOver(e, cell.dateStr)}
                     onDragLeave={(e) => handleDragLeave(e, cell.dateStr)}
                     onDrop={(e) => handleDrop(e, cell.dateStr)}
+                    onDoubleClick={(e) => {
+                      // 콘텐츠 항목이 아닌 빈 영역에서만 작동
+                      if (e.target.classList.contains('cal-item')) return;
+                      setEditingItem(newItemDefaults(cell.dateStr));
+                    }}
+                    title="더블클릭하여 새 콘텐츠 추가"
                   >
                     <div className={`day-num ${dayClass}`}>{cell.day}</div>
                     {cell.holiday && <div className="day-event" style={{ color: '#D4537E', fontWeight: 500 }}>{cell.holiday}</div>}
@@ -544,7 +723,7 @@ export default function App({ session }) {
           <WeekView
             weekStart={weekStart}
             setWeekStart={setWeekStart}
-            items={items}
+            items={filteredItems}
             holidays={HOLIDAYS}
             anniversaries={ANNIVERSARIES}
             onItemClick={setSelectedItem}
@@ -560,12 +739,17 @@ export default function App({ session }) {
 
         {!loading && !error && viewMode === 'list' && (
           <ListView
-            items={items}
+            items={filteredItems}
             currentMonth={currentMonth}
             holidays={HOLIDAYS}
             anniversaries={ANNIVERSARIES}
             onItemClick={setSelectedItem}
+            onAddClick={(dateStr) => setEditingItem(newItemDefaults(dateStr))}
           />
+        )}
+
+        {!loading && !error && viewMode === 'kpi' && (
+          <KPIView items={items} currentMonth={currentMonth} />
         )}
 
         {selectedItem && (
@@ -646,6 +830,7 @@ function DetailModal({ item, performance, onClose, onToggleCompleted, onUpdatePe
           {item.mainKeyword && <InfoRow label="메인 키워드" value={<div><div>{item.mainKeyword}</div>{item.strength && <div style={{ color: '#888780', fontSize: 12, marginTop: 2 }}>{item.strength}</div>}</div>} />}
           {item.asset && <InfoRow label="자산" value={item.asset} />}
           {item.nextSkill && <InfoRow label="작성 스킬" value={<code style={{ background: '#F8F8F6', padding: '2px 8px', borderRadius: 4, fontSize: 12, color: '#5F5E5A', fontFamily: 'ui-monospace, monospace' }}>{item.nextSkill}</code>} />}
+          {item.description && <InfoRow label="메모" value={<div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{item.description}</div>} />}
         </div>
 
         <div style={{ padding: '12px 22px 16px', borderTop: '0.5px solid rgba(0,0,0,0.06)', marginTop: 12 }}>
@@ -827,6 +1012,16 @@ function EditModal({ item, onSave, onClose }) {
                 <label style={labelStyle}>자산</label>
                 <input type="text" value={form.asset || ''} onChange={(e) => handleChange('asset', e.target.value)} style={inputStyle} placeholder="예: 5/3 펜던트 시공 영상" />
               </div>
+              <div>
+                <label style={labelStyle}>메모</label>
+                <textarea
+                  value={form.description || ''}
+                  onChange={(e) => handleChange('description', e.target.value)}
+                  rows={3}
+                  style={{ ...inputStyle, resize: 'vertical', minHeight: 70, lineHeight: 1.5 }}
+                  placeholder="추가 설명·아이디어·캡션 초안 등"
+                />
+              </div>
 
               {/* 토스 스타일 토글 스위치 */}
               <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', padding: '4px 0' }}>
@@ -913,7 +1108,7 @@ function DeleteSheet({ itemTitle, onCancel, onConfirm }) {
 // ============================================================
 // 리스트뷰
 // ============================================================
-function ListView({ items, currentMonth, holidays, anniversaries, onItemClick }) {
+function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, onAddClick }) {
   const dayLabelsLocal = ['일', '월', '화', '수', '목', '금', '토'];
   const [yearStr, monthStr] = currentMonth.split('-');
   const yearNum = parseInt(yearStr, 10);
@@ -1021,6 +1216,16 @@ function ListView({ items, currentMonth, holidays, anniversaries, onItemClick })
                     {dayItems.length}편
                     {dayCompletedCount > 0 && <span style={{ color: '#3A7D3A', marginLeft: 4 }}>· {dayCompletedCount}</span>}
                   </span>
+                )}
+                {onAddClick && (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => { e.stopPropagation(); onAddClick(dateStr); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onAddClick(dateStr); } }}
+                    className="list-day-add-btn"
+                    aria-label="이 날짜에 콘텐츠 추가"
+                  >+</span>
                 )}
               </div>
             </button>
@@ -1160,3 +1365,136 @@ const weekNavBtn = {
   padding: 0,
   fontFamily: 'inherit'
 };
+
+// ============================================================
+// KPI 대시보드
+// ============================================================
+function KPIView({ items, currentMonth }) {
+  // 통계 계산
+  const total = items.length;
+  const completed = items.filter(it => it.completed).length;
+  const completionRate = total > 0 ? Math.round(completed / total * 100) : 0;
+
+  // 채널별 집계
+  const byChannel = {};
+  CHANNEL_OPTIONS.forEach(opt => {
+    byChannel[opt.value] = { label: opt.label, total: 0, done: 0, color: COLORS[opt.value] || { bg: '#F0F0EB' } };
+  });
+  items.forEach(it => {
+    if (byChannel[it.channel]) {
+      byChannel[it.channel].total += 1;
+      if (it.completed) byChannel[it.channel].done += 1;
+    }
+  });
+  const channelStats = Object.values(byChannel).filter(c => c.total > 0).sort((a, b) => b.total - a.total);
+
+  // 핵심 vs 일반
+  const coreItems = items.filter(it => it.isCore);
+  const coreCompleted = coreItems.filter(it => it.completed).length;
+  const coreRate = coreItems.length > 0 ? Math.round(coreCompleted / coreItems.length * 100) : 0;
+
+  // 주차별 발행 분포 (월간)
+  const [yearStr, monthStr] = currentMonth.split('-');
+  const yearNum = parseInt(yearStr, 10);
+  const monthNum = parseInt(monthStr, 10);
+  const lastDay = new Date(yearNum, monthNum, 0).getDate();
+  const weeksData = [
+    { label: '1주차', range: '1~7일', total: 0, done: 0 },
+    { label: '2주차', range: '8~14일', total: 0, done: 0 },
+    { label: '3주차', range: '15~21일', total: 0, done: 0 },
+    { label: '4주차', range: '22~28일', total: 0, done: 0 },
+    { label: '5주차', range: `29~${lastDay}일`, total: 0, done: 0 }
+  ];
+  items.forEach(it => {
+    const day = parseInt(it.date.split('-')[2], 10);
+    let weekIdx;
+    if (day <= 7) weekIdx = 0;
+    else if (day <= 14) weekIdx = 1;
+    else if (day <= 21) weekIdx = 2;
+    else if (day <= 28) weekIdx = 3;
+    else weekIdx = 4;
+    weeksData[weekIdx].total += 1;
+    if (it.completed) weeksData[weekIdx].done += 1;
+  });
+
+  // 발행 후 기록은 별도 테이블 — 여기선 표시 안 함 (TODO: 추후 join)
+
+  if (total === 0) {
+    return (
+      <div style={{ background: '#FFFFFF', borderRadius: 12, padding: 60, textAlign: 'center', color: '#888780', fontSize: 14 }}>
+        이번 달에 등록된 콘텐츠가 없어요.<br />
+        <span style={{ fontSize: 12, marginTop: 8, display: 'inline-block' }}>+ 새 콘텐츠 버튼으로 추가하세요.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* 핵심 지표 4종 */}
+      <div className="kpi-cards">
+        <KpiCard label="이번 달 콘텐츠" value={`${total}편`} sub={`핵심 ${coreItems.length}편`} />
+        <KpiCard label="발행 완료" value={`${completed}편`} sub={`${completionRate}%`} accent={completionRate >= 50 ? '#3A7D3A' : '#5F5E5A'} />
+        <KpiCard label="미발행" value={`${total - completed}편`} sub={`${100 - completionRate}%`} accent={total - completed > 0 ? '#D4537E' : '#5F5E5A'} />
+        <KpiCard label="핵심 발행률" value={`${coreRate}%`} sub={`${coreCompleted}/${coreItems.length}편`} accent="#D4A92E" />
+      </div>
+
+      {/* 발행률 막대 */}
+      <div className="kpi-card-full">
+        <div className="kpi-card-title">전체 발행률</div>
+        <div className="kpi-bar-track">
+          <div className="kpi-bar-fill" style={{ width: `${completionRate}%`, background: completionRate >= 70 ? '#3A7D3A' : completionRate >= 40 ? '#D4A92E' : '#D4537E' }} />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#888780', marginTop: 6 }}>
+          <span>{completed}편 발행</span>
+          <span>{completionRate}%</span>
+        </div>
+      </div>
+
+      {/* 채널별 */}
+      <div className="kpi-card-full">
+        <div className="kpi-card-title">채널별 발행 현황</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {channelStats.map(ch => {
+            const rate = ch.total > 0 ? Math.round(ch.done / ch.total * 100) : 0;
+            return (
+              <div key={ch.label}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <span style={{ fontSize: 13, color: '#1A1A1A', fontWeight: 500 }}>{ch.label}</span>
+                  <span style={{ fontSize: 12, color: '#5F5E5A' }}>{ch.done}/{ch.total}편 · {rate}%</span>
+                </div>
+                <div className="kpi-bar-track">
+                  <div className="kpi-bar-fill" style={{ width: `${rate}%`, background: ch.color.bg, borderRight: rate > 0 && rate < 100 ? `2px solid ${ch.color.fg || '#5F5E5A'}` : 'none' }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 주차별 */}
+      <div className="kpi-card-full">
+        <div className="kpi-card-title">주차별 발행 분포</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+          {weeksData.map(w => (
+            <div key={w.label} style={{ background: '#F8F8F6', borderRadius: 8, padding: '12px 8px', textAlign: 'center' }}>
+              <div style={{ fontSize: 11, color: '#888780', marginBottom: 2 }}>{w.label}</div>
+              <div style={{ fontSize: 18, fontWeight: 600, color: '#1A1A1A' }}>{w.total}<span style={{ fontSize: 11, color: '#5F5E5A', marginLeft: 2 }}>편</span></div>
+              <div style={{ fontSize: 10, color: '#5F5E5A', marginTop: 2 }}>{w.range}</div>
+              {w.done > 0 && <div style={{ fontSize: 10, color: '#3A7D3A', marginTop: 4 }}>발행 {w.done}</div>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function KpiCard({ label, value, sub, accent }) {
+  return (
+    <div className="kpi-card">
+      <div className="kpi-card-label">{label}</div>
+      <div className="kpi-card-value" style={{ color: accent || '#1A1A1A' }}>{value}</div>
+      {sub && <div className="kpi-card-sub" style={{ color: accent || '#888780' }}>{sub}</div>}
+    </div>
+  );
+}
