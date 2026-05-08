@@ -101,6 +101,30 @@ export default function App({ session }) {
   const [draggingId, setDraggingId] = useState(null);
   const [dragOverDate, setDragOverDate] = useState(null);
 
+  // 뷰 모드: 'month' | 'week' | 'list'
+  const [viewMode, setViewMode] = useState(() => {
+    if (typeof window !== 'undefined' && window.innerWidth <= 640) return 'list';
+    return 'month';
+  });
+  const [weekStart, setWeekStart] = useState(() => {
+    const d = new Date();
+    const dow = d.getDay();
+    d.setDate(d.getDate() - dow); // 일요일 시작
+    return d;
+  });
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth <= 640 : false);
+
+  useEffect(() => {
+    const onResize = () => {
+      const mobile = window.innerWidth <= 640;
+      setIsMobile(mobile);
+      // 모바일 진입 시 자동 리스트뷰 (PC 복귀 시 강제 변경 X)
+      if (mobile && viewMode === 'month') setViewMode('list');
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [viewMode]);
+
   const loadMonthData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -356,6 +380,40 @@ export default function App({ session }) {
         .month-title { font-size: 20px; font-weight: 600; margin: 0 0 2px; }
         .user-email { font-size: 12px; color: #5F5E5A; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+        .view-toggle { display: flex; gap: 0; background: #FFFFFF; border-radius: 10px; padding: 3px; margin-bottom: 1rem; max-width: 280px; }
+        .view-toggle-btn { flex: 1; padding: 8px 14px; background: transparent; border: none; cursor: pointer; font-size: 13px; font-family: inherit; color: #5F5E5A; border-radius: 8px; transition: all 0.15s; font-weight: 500; }
+        .view-toggle-btn.active { background: #1A1A1A; color: #FFFFFF; }
+        .view-toggle-btn:hover:not(.active) { color: #1A1A1A; }
+
+        .list-view { display: flex; flex-direction: column; gap: 12px; }
+        .list-day { background: #FFFFFF; border-radius: 12px; overflow: hidden; }
+        .list-day-header { padding: 12px 16px; border-bottom: 0.5px solid rgba(0,0,0,0.06); display: flex; justify-content: space-between; align-items: center; }
+        .list-day-date { font-size: 15px; font-weight: 600; color: #1A1A1A; }
+        .list-day-date .dow { font-size: 13px; color: #5F5E5A; margin-left: 6px; font-weight: 400; }
+        .list-day-date .dow.sun { color: #D4537E; }
+        .list-day-date .dow.sat { color: #5C7AA8; }
+        .list-day-event { font-size: 12px; color: #888780; }
+        .list-day-event.holiday { color: #D4537E; }
+        .list-items { padding: 6px 0; }
+        .list-item { display: flex; gap: 10px; padding: 10px 16px; cursor: pointer; align-items: center; transition: background 0.1s; border: none; background: transparent; width: 100%; text-align: left; font-family: inherit; }
+        .list-item:hover { background: #F8F8F6; }
+        .list-item-dot { width: 4px; align-self: stretch; min-height: 32px; border-radius: 2px; flex-shrink: 0; }
+        .list-item-content { flex: 1; min-width: 0; }
+        .list-item-title { font-size: 14px; color: #1A1A1A; font-weight: 500; line-height: 1.4; word-break: keep-all; }
+        .list-item-title.completed { opacity: 0.5; text-decoration: line-through; }
+        .list-item-meta { font-size: 11px; color: #888780; margin-top: 3px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .list-empty { padding: 40px 20px; text-align: center; color: #888780; font-size: 13px; }
+
+        .week-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+        .week-cell { background: #FFFFFF; border-radius: 8px; padding: 10px 8px; min-height: 320px; display: flex; flex-direction: column; }
+        .week-cell.holiday { background: #FAF9F5; }
+        .week-cell-header { padding-bottom: 8px; border-bottom: 0.5px solid rgba(0,0,0,0.06); margin-bottom: 8px; }
+        .week-cell-day { font-size: 18px; font-weight: 600; }
+        .week-cell-dow { font-size: 11px; color: #5F5E5A; }
+        .week-cell-items { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+        .week-item { padding: 6px 8px; border-radius: 6px; font-size: 11px; cursor: grab; border: none; text-align: left; font-family: inherit; line-height: 1.3; word-break: keep-all; }
+        .week-item.completed { opacity: 0.5; text-decoration: line-through; }
+
         @media (max-width: 640px) {
           .cal-cell { min-height: 70px; padding: 4px 3px; }
           .cal-cell-empty { min-height: 70px; }
@@ -370,6 +428,15 @@ export default function App({ session }) {
           .cal-grid { gap: 2px; }
           .dow-row { gap: 2px; }
           .dow-row > div { font-size: 10px; padding: 4px 0; }
+          .view-toggle { max-width: 100%; }
+          .view-toggle-btn { padding: 8px 10px; font-size: 12px; }
+          .week-cell { min-height: 240px; padding: 8px 5px; }
+          .week-cell-day { font-size: 15px; }
+          .week-item { font-size: 10px; padding: 4px 5px; }
+          .list-day-header { padding: 10px 12px; }
+          .list-day-date { font-size: 14px; }
+          .list-item { padding: 10px 12px; gap: 8px; }
+          .list-item-title { font-size: 13px; }
         }
         @media (max-width: 380px) {
           .cal-cell { min-height: 60px; padding: 3px 2px; }
@@ -379,6 +446,7 @@ export default function App({ session }) {
           .day-event { font-size: 7px; }
           .month-title { font-size: 15px; }
           .user-email { display: none; }
+          .week-cell { min-height: 200px; padding: 6px 4px; }
         }
       `}</style>
 
@@ -400,10 +468,25 @@ export default function App({ session }) {
           </div>
         </div>
 
+        {/* 뷰 토글 버튼 */}
+        <div className="view-toggle">
+          {[
+            { value: 'month', label: '월간' },
+            { value: 'week', label: '주간' },
+            { value: 'list', label: '리스트' }
+          ].map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => setViewMode(opt.value)}
+              className={`view-toggle-btn ${viewMode === opt.value ? 'active' : ''}`}
+            >{opt.label}</button>
+          ))}
+        </div>
+
         {loading && <div style={{ padding: 20, textAlign: 'center', color: '#5F5E5A', fontSize: 13 }}>불러오는 중...</div>}
         {error && <div style={{ padding: 12, background: '#FAF0F4', color: '#D4537E', borderRadius: 8, fontSize: 13, marginBottom: 12 }}>오류: {error}</div>}
 
-        {!loading && !error && (
+        {!loading && !error && viewMode === 'month' && (
           <>
             <div className="dow-row">{dayLabels.map(label => <div key={label}>{label}</div>)}</div>
             <div className="cal-grid">
@@ -447,6 +530,34 @@ export default function App({ session }) {
               })}
             </div>
           </>
+        )}
+
+        {!loading && !error && viewMode === 'week' && (
+          <WeekView
+            weekStart={weekStart}
+            setWeekStart={setWeekStart}
+            items={items}
+            holidays={HOLIDAYS}
+            anniversaries={ANNIVERSARIES}
+            onItemClick={setSelectedItem}
+            draggingId={draggingId}
+            dragOverDate={dragOverDate}
+            handleDragStart={handleDragStart}
+            handleDragEnd={handleDragEnd}
+            handleDragOver={handleDragOver}
+            handleDragLeave={handleDragLeave}
+            handleDrop={handleDrop}
+          />
+        )}
+
+        {!loading && !error && viewMode === 'list' && (
+          <ListView
+            items={items}
+            currentMonth={currentMonth}
+            holidays={HOLIDAYS}
+            anniversaries={ANNIVERSARIES}
+            onItemClick={setSelectedItem}
+          />
         )}
 
         {selectedItem && (
@@ -790,3 +901,201 @@ function DeleteSheet({ itemTitle, onCancel, onConfirm }) {
     </div>
   );
 }
+
+// ============================================================
+// 리스트뷰
+// ============================================================
+function ListView({ items, currentMonth, holidays, anniversaries, onItemClick }) {
+  // 날짜별 그룹화 + 해당 월 내의 콘텐츠가 있는 날만
+  const dayLabelsLocal = ['일', '월', '화', '수', '목', '금', '토'];
+  const [yearStr, monthStr] = currentMonth.split('-');
+  const yearNum = parseInt(yearStr, 10);
+  const monthNum = parseInt(monthStr, 10);
+  const lastDay = new Date(yearNum, monthNum, 0).getDate();
+
+  // 콘텐츠가 있는 날짜만 추출
+  const datesWithItems = new Set(items.map(it => it.date));
+  const dates = [];
+  for (let d = 1; d <= lastDay; d++) {
+    const dateStr = `${yearStr}-${monthStr}-${String(d).padStart(2, '0')}`;
+    if (datesWithItems.has(dateStr) || holidays[dateStr] || anniversaries[dateStr]) {
+      dates.push(dateStr);
+    }
+  }
+
+  if (dates.length === 0) {
+    return (
+      <div className="list-view">
+        <div className="list-empty">
+          이번 달에 등록된 콘텐츠가 없어요.<br />
+          <span style={{ fontSize: 12, color: '#888780' }}>+ 새 콘텐츠 버튼으로 추가하세요.</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="list-view">
+      {dates.map(dateStr => {
+        const [, , dayStr] = dateStr.split('-');
+        const day = parseInt(dayStr, 10);
+        const dt = new Date(yearNum, monthNum - 1, day);
+        const dow = dt.getDay();
+        const dowLabel = dayLabelsLocal[dow];
+        const dowClass = dow === 0 ? 'sun' : dow === 6 ? 'sat' : '';
+        const dayItems = items.filter(it => it.date === dateStr);
+        const holiday = holidays[dateStr];
+        const anniversary = anniversaries[dateStr];
+
+        return (
+          <div key={dateStr} className="list-day">
+            <div className="list-day-header">
+              <div className="list-day-date">
+                {monthNum}월 {day}일
+                <span className={`dow ${dowClass}`}>({dowLabel})</span>
+              </div>
+              {(holiday || anniversary) && (
+                <div className={`list-day-event ${holiday ? 'holiday' : ''}`}>
+                  {holiday || anniversary}
+                </div>
+              )}
+            </div>
+            {dayItems.length > 0 && (
+              <div className="list-items">
+                {dayItems.map(it => {
+                  const c = COLORS[it.channel] || { bg: '#F0F0EB', fg: '#1A1A1A' };
+                  return (
+                    <button
+                      key={it.id}
+                      className="list-item"
+                      onClick={() => onItemClick(it)}
+                    >
+                      <div className="list-item-dot" style={{ background: c.bg }} />
+                      <div className="list-item-content">
+                        <div className={`list-item-title ${it.completed ? 'completed' : ''}`}>
+                          {it.isCore && <span style={{ color: '#D4A92E', marginRight: 4 }}>★</span>}
+                          {it.title}
+                        </div>
+                        <div className="list-item-meta">
+                          <span>{it.channelName}</span>
+                          {it.time && <span>· {it.time}</span>}
+                          {it.completed && <span style={{ color: '#3A7D3A' }}>· 발행 완료</span>}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ============================================================
+// 주간뷰
+// ============================================================
+function WeekView({ weekStart, setWeekStart, items, holidays, anniversaries, onItemClick, draggingId, dragOverDate, handleDragStart, handleDragEnd, handleDragOver, handleDragLeave, handleDrop }) {
+  const dayLabelsLocal = ['일', '월', '화', '수', '목', '금', '토'];
+
+  // 주 시작 7일 표시
+  const weekDates = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + i);
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    weekDates.push({ date: d, dateStr, dow: d.getDay(), day: d.getDate() });
+  }
+
+  const prevWeek = () => {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() - 7);
+    setWeekStart(d);
+  };
+  const nextWeek = () => {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + 7);
+    setWeekStart(d);
+  };
+  const thisWeek = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - d.getDay());
+    setWeekStart(d);
+  };
+
+  const startStr = `${weekDates[0].date.getMonth() + 1}.${weekDates[0].day}`;
+  const endStr = `${weekDates[6].date.getMonth() + 1}.${weekDates[6].day}`;
+
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 13, color: '#5F5E5A' }}>
+        <button onClick={prevWeek} style={{ ...weekNavBtn, fontSize: 14 }}>‹</button>
+        <span style={{ minWidth: 80, textAlign: 'center', fontWeight: 500 }}>{startStr} ~ {endStr}</span>
+        <button onClick={nextWeek} style={{ ...weekNavBtn, fontSize: 14 }}>›</button>
+        <button onClick={thisWeek} style={{ ...weekNavBtn, width: 'auto', padding: '4px 10px', fontSize: 12 }}>이번 주</button>
+      </div>
+      <div className="week-grid">
+        {weekDates.map(wd => {
+          const dayItems = items.filter(it => it.date === wd.dateStr);
+          const holiday = holidays[wd.dateStr];
+          const anniversary = anniversaries[wd.dateStr];
+          const dowClass = wd.dow === 0 ? 'sun' : wd.dow === 6 ? 'sat' : '';
+          const isDragOver = dragOverDate === wd.dateStr;
+
+          return (
+            <div
+              key={wd.dateStr}
+              className={`week-cell ${holiday ? 'holiday' : ''} ${isDragOver ? 'drag-over' : ''}`}
+              onDragOver={(e) => handleDragOver(e, wd.dateStr)}
+              onDragLeave={(e) => handleDragLeave(e, wd.dateStr)}
+              onDrop={(e) => handleDrop(e, wd.dateStr)}
+            >
+              <div className="week-cell-header">
+                <div className={`week-cell-day ${dowClass === 'sun' ? '' : ''}`} style={{ color: dowClass === 'sun' ? '#D4537E' : dowClass === 'sat' ? '#5C7AA8' : '#1A1A1A' }}>{wd.day}</div>
+                <div className="week-cell-dow">{dayLabelsLocal[wd.dow]}</div>
+                {holiday && <div style={{ fontSize: 10, color: '#D4537E', marginTop: 2 }}>{holiday}</div>}
+                {anniversary && <div style={{ fontSize: 10, color: '#888780', marginTop: 2 }}>{anniversary}</div>}
+              </div>
+              <div className="week-cell-items">
+                {dayItems.map(it => {
+                  const c = COLORS[it.channel] || { bg: '#F0F0EB', fg: '#1A1A1A' };
+                  const isDragging = draggingId === it.id;
+                  return (
+                    <button
+                      key={it.id}
+                      className={`week-item ${it.completed ? 'completed' : ''}`}
+                      style={{ background: c.bg, color: c.fg, opacity: isDragging ? 0.3 : 1, transform: isDragging ? 'scale(0.95)' : 'none' }}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, it.id)}
+                      onDragEnd={handleDragEnd}
+                      onClick={(e) => { e.stopPropagation(); if (!isDragging) onItemClick(it); }}
+                    >
+                      {it.isCore && '★ '}{it.title}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+const weekNavBtn = {
+  background: 'transparent',
+  border: '0.5px solid rgba(0,0,0,0.18)',
+  borderRadius: 6,
+  width: 28,
+  height: 28,
+  cursor: 'pointer',
+  color: '#1A1A1A',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 0,
+  fontFamily: 'inherit'
+};
