@@ -753,6 +753,7 @@ export default function App({ session }) {
             handleDragOver={handleDragOver}
             handleDragLeave={handleDragLeave}
             handleDrop={handleDrop}
+            isMobile={isMobile}
           />
         )}
 
@@ -1282,10 +1283,9 @@ function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, o
   );
 }
 
-function WeekView({ weekStart, setWeekStart, items, holidays, anniversaries, onItemClick, draggingId, dragOverDate, handleDragStart, handleDragEnd, handleDragOver, handleDragLeave, handleDrop }) {
+function WeekView({ weekStart, setWeekStart, items, holidays, anniversaries, onItemClick, draggingId, dragOverDate, handleDragStart, handleDragEnd, handleDragOver, handleDragLeave, handleDrop, isMobile }) {
   const dayLabelsLocal = ['일', '월', '화', '수', '목', '금', '토'];
 
-  // 주 시작 7일 표시
   const weekDates = [];
   for (let i = 0; i < 7; i++) {
     const d = new Date(weekStart);
@@ -1294,24 +1294,15 @@ function WeekView({ weekStart, setWeekStart, items, holidays, anniversaries, onI
     weekDates.push({ date: d, dateStr, dow: d.getDay(), day: d.getDate() });
   }
 
-  const prevWeek = () => {
-    const d = new Date(weekStart);
-    d.setDate(d.getDate() - 7);
-    setWeekStart(d);
-  };
-  const nextWeek = () => {
-    const d = new Date(weekStart);
-    d.setDate(d.getDate() + 7);
-    setWeekStart(d);
-  };
-  const thisWeek = () => {
-    const d = new Date();
-    d.setDate(d.getDate() - d.getDay());
-    setWeekStart(d);
-  };
+  const prevWeek = () => { const d = new Date(weekStart); d.setDate(d.getDate() - 7); setWeekStart(d); };
+  const nextWeek = () => { const d = new Date(weekStart); d.setDate(d.getDate() + 7); setWeekStart(d); };
+  const thisWeek = () => { const d = new Date(); d.setDate(d.getDate() - d.getDay()); setWeekStart(d); };
 
   const startStr = `${weekDates[0].date.getMonth() + 1}.${weekDates[0].day}`;
   const endStr = `${weekDates[6].date.getMonth() + 1}.${weekDates[6].day}`;
+
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
 
   return (
     <>
@@ -1321,53 +1312,88 @@ function WeekView({ weekStart, setWeekStart, items, holidays, anniversaries, onI
         <button onClick={nextWeek} style={{ ...weekNavBtn, fontSize: 14 }}>›</button>
         <button onClick={thisWeek} style={{ ...weekNavBtn, width: 'auto', padding: '4px 10px', fontSize: 12 }}>이번 주</button>
       </div>
-      <div className="week-scroll">
-        <div className="week-grid">
-          {weekDates.map(wd => {
-          const dayItems = items.filter(it => it.date === wd.dateStr);
-          const holiday = holidays[wd.dateStr];
-          const anniversary = anniversaries[wd.dateStr];
-          const dowClass = wd.dow === 0 ? 'sun' : wd.dow === 6 ? 'sat' : '';
-          const isDragOver = dragOverDate === wd.dateStr;
 
-          return (
-            <div
-              key={wd.dateStr}
-              className={`week-cell ${holiday ? 'holiday' : ''} ${isDragOver ? 'drag-over' : ''}`}
-              onDragOver={(e) => handleDragOver(e, wd.dateStr)}
-              onDragLeave={(e) => handleDragLeave(e, wd.dateStr)}
-              onDrop={(e) => handleDrop(e, wd.dateStr)}
-            >
-              <div className="week-cell-header">
-                <div className={`week-cell-day ${dowClass === 'sun' ? '' : ''}`} style={{ color: dowClass === 'sun' ? '#D4537E' : dowClass === 'sat' ? '#5C7AA8' : '#1A1A1A' }}>{wd.day}</div>
-                <div className="week-cell-dow">{dayLabelsLocal[wd.dow]}</div>
-                {holiday && <div style={{ fontSize: 10, color: '#D4537E', marginTop: 2 }}>{holiday}</div>}
-                {anniversary && <div style={{ fontSize: 10, color: '#888780', marginTop: 2 }}>{anniversary}</div>}
+      {isMobile ? (
+        /* 모바일: 세로 리스트 */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {weekDates.map(wd => {
+            const dayItems = items.filter(it => it.date === wd.dateStr);
+            const holiday = holidays[wd.dateStr];
+            const anniversary = anniversaries[wd.dateStr];
+            const isToday = wd.dateStr === todayStr;
+            const dowColor = wd.dow === 0 ? '#D4537E' : wd.dow === 6 ? '#5C7AA8' : '#1A1A1A';
+            return (
+              <div key={wd.dateStr} style={{ background: '#FFFFFF', borderRadius: 10, overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: dayItems.length > 0 ? '0.5px solid rgba(0,0,0,0.06)' : 'none' }}>
+                  <div style={{ width: 32, height: 32, borderRadius: '50%', background: isToday ? '#1A1A1A' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <span style={{ fontSize: 15, fontWeight: 600, color: isToday ? '#FFF' : dowColor }}>{wd.day}</span>
+                  </div>
+                  <span style={{ fontSize: 12, color: '#888780' }}>{dayLabelsLocal[wd.dow]}{holiday ? ` · ${holiday}` : ''}{anniversary ? ` · ${anniversary}` : ''}</span>
+                  {dayItems.length > 0 && <span style={{ marginLeft: 'auto', fontSize: 11, color: '#888780' }}>{dayItems.length}개</span>}
+                </div>
+                {dayItems.length > 0 && (
+                  <div style={{ padding: '6px 0' }}>
+                    {dayItems.map(it => {
+                      const c = COLORS[it.channel] || { bg: '#F0F0EB', fg: '#1A1A1A' };
+                      return (
+                        <button key={it.id} onClick={() => onItemClick(it)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 14px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+                          <span style={{ width: 4, height: 4, borderRadius: '50%', background: c.fg, flexShrink: 0 }} />
+                          <span style={{ fontSize: 13, color: it.completed ? '#aaa' : '#1A1A1A', textDecoration: it.completed ? 'line-through' : 'none', flex: 1 }}>
+                            {it.isCore && '★ '}{it.title}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-              <div className="week-cell-items">
-                {dayItems.map(it => {
-                  const c = COLORS[it.channel] || { bg: '#F0F0EB', fg: '#1A1A1A' };
-                  const isDragging = draggingId === it.id;
-                  return (
-                    <button
-                      key={it.id}
-                      className={`week-item ${it.completed ? 'completed' : ''}`}
-                      style={{ background: c.bg, color: c.fg, opacity: isDragging ? 0.3 : 1, transform: isDragging ? 'scale(0.95)' : 'none' }}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, it.id)}
-                      onDragEnd={handleDragEnd}
-                      onClick={(e) => { e.stopPropagation(); if (!isDragging) onItemClick(it); }}
-                    >
-                      {it.isCore && '★ '}{it.title}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
         </div>
-      </div>
+      ) : (
+        /* 데스크탑: 7열 그리드 */
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+          {weekDates.map(wd => {
+            const dayItems = items.filter(it => it.date === wd.dateStr);
+            const holiday = holidays[wd.dateStr];
+            const anniversary = anniversaries[wd.dateStr];
+            const dowColor = wd.dow === 0 ? '#D4537E' : wd.dow === 6 ? '#5C7AA8' : '#1A1A1A';
+            const isDragOver = dragOverDate === wd.dateStr;
+            return (
+              <div key={wd.dateStr}
+                className={`week-cell ${holiday ? 'holiday' : ''} ${isDragOver ? 'drag-over' : ''}`}
+                onDragOver={(e) => handleDragOver(e, wd.dateStr)}
+                onDragLeave={(e) => handleDragLeave(e, wd.dateStr)}
+                onDrop={(e) => handleDrop(e, wd.dateStr)}
+              >
+                <div className="week-cell-header">
+                  <div className="week-cell-day" style={{ color: dowColor }}>{wd.day}</div>
+                  <div className="week-cell-dow">{dayLabelsLocal[wd.dow]}</div>
+                  {holiday && <div style={{ fontSize: 10, color: '#D4537E', marginTop: 2 }}>{holiday}</div>}
+                  {anniversary && <div style={{ fontSize: 10, color: '#888780', marginTop: 2 }}>{anniversary}</div>}
+                </div>
+                <div className="week-cell-items">
+                  {dayItems.map(it => {
+                    const c = COLORS[it.channel] || { bg: '#F0F0EB', fg: '#1A1A1A' };
+                    const isDragging = draggingId === it.id;
+                    return (
+                      <button key={it.id}
+                        className={`week-item ${it.completed ? 'completed' : ''}`}
+                        style={{ background: c.bg, color: c.fg, opacity: isDragging ? 0.3 : 1 }}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, it.id)}
+                        onDragEnd={handleDragEnd}
+                        onClick={(e) => { e.stopPropagation(); if (!isDragging) onItemClick(it); }}
+                      >{it.isCore && '★ '}{it.title}</button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </>
   );
 }
