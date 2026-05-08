@@ -7,6 +7,14 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: false
+    detectSessionInUrl: false,
+    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+    storageKey: 'moment-in-calendar-auth',
+    flowType: 'pkce'
+  },
+  global: {
+    headers: {
+      'X-Client-Info': 'moment-in-calendar@1.0'
+    }
   }
 });

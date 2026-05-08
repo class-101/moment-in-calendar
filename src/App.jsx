@@ -325,12 +325,16 @@ export default function App({ session }) {
   });
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F1EFE8', padding: '1.5rem 1rem', fontFamily: "'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif", color: '#1A1A1A' }}>
+    <div style={{ minHeight: '100vh', background: '#F1EFE8', fontFamily: "'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif", color: '#1A1A1A' }} className="app-root">
       <style>{`
         * { box-sizing: border-box; }
         @keyframes sheetFadeIn { from { background: rgba(0,0,0,0); } to { background: rgba(0,0,0,0.5); } }
         @keyframes sheetSlideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        .app-root { padding: 1.5rem 1rem; }
+        @media (max-width: 640px) { .app-root { padding: 1rem 0.75rem; } }
+        @media (max-width: 380px) { .app-root { padding: 0.75rem 0.5rem; } }
         .cal-cell { background: #FFFFFF; border-radius: 8px; padding: 8px 6px; min-height: 90px; position: relative; transition: background 0.15s, box-shadow 0.15s; }
+        .cal-cell-empty { min-height: 90px; }
         .cal-cell.holiday { background: #FAF9F5; }
         .cal-cell.drag-over { background: #F0EDE0; box-shadow: inset 0 0 0 2px #1A1A1A; }
         .cal-cell .day-num { font-size: 13px; font-weight: 500; }
@@ -346,27 +350,53 @@ export default function App({ session }) {
         .cal-item.dragging { opacity: 0.3; transform: scale(0.95); }
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 1000; }
         .modal-content { background: #FFFFFF; border-radius: 12px; padding: 22px; max-width: 480px; width: 100%; max-height: 90vh; overflow: auto; }
+        .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; gap: 12px; flex-wrap: wrap; }
+        .header-nav { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+        .header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .month-title { font-size: 20px; font-weight: 600; margin: 0 0 2px; }
+        .user-email { font-size: 12px; color: #5F5E5A; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
         @media (max-width: 640px) {
-          .cal-cell { min-height: 60px; padding: 4px 3px; }
+          .cal-cell { min-height: 70px; padding: 4px 3px; }
+          .cal-cell-empty { min-height: 70px; }
           .cal-cell .day-num { font-size: 11px; }
+          .day-event { font-size: 8px; }
+          .cal-item { font-size: 8px; padding: 2px 3px; }
+          .modal-overlay { padding: 0; align-items: flex-end; }
+          .modal-content { border-radius: 16px 16px 0 0; max-height: 92vh; padding: 18px; max-width: 100%; }
+          .header-row { gap: 8px; }
+          .month-title { font-size: 17px; }
+          .user-email { max-width: 120px; font-size: 11px; }
+          .cal-grid { gap: 2px; }
+          .dow-row { gap: 2px; }
+          .dow-row > div { font-size: 10px; padding: 4px 0; }
+        }
+        @media (max-width: 380px) {
+          .cal-cell { min-height: 60px; padding: 3px 2px; }
+          .cal-cell-empty { min-height: 60px; }
+          .cal-cell .day-num { font-size: 10px; }
+          .cal-item { font-size: 7px; padding: 1px 2px; }
+          .day-event { font-size: 7px; }
+          .month-title { font-size: 15px; }
+          .user-email { display: none; }
         }
       `}</style>
 
       <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div className="header-row">
+          <div className="header-nav">
             <button onClick={prevMonth} style={navBtnStyle} aria-label="이전">‹</button>
-            <div style={{ minWidth: 130, textAlign: 'center' }}>
-              <h1 style={{ fontSize: 20, fontWeight: 600, margin: '0 0 2px' }}>{yearNum}년 {monthNum}월</h1>
-              <p style={{ fontSize: 12, color: '#5F5E5A', margin: 0 }}>moment.in × ohana</p>
+            <div style={{ minWidth: 110, textAlign: 'center' }}>
+              <h1 className="month-title">{yearNum}년 {monthNum}월</h1>
+              <p style={{ fontSize: 11, color: '#5F5E5A', margin: 0 }}>moment.in × ohana</p>
             </div>
             <button onClick={nextMonth} style={navBtnStyle} aria-label="다음">›</button>
-            <button onClick={goToday} style={{ ...navBtnStyle, width: 'auto', padding: '6px 12px', fontSize: 12, color: '#5F5E5A' }}>오늘</button>
+            <button onClick={goToday} style={{ ...navBtnStyle, width: 'auto', padding: '6px 10px', fontSize: 12, color: '#5F5E5A' }}>오늘</button>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <button onClick={() => setEditingItem(newItemDefaults())} style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>+ 새 콘텐츠</button>
-            <span style={{ fontSize: 12, color: '#5F5E5A' }}>{userEmail}</span>
-            <button onClick={handleSignOut} style={{ background: 'transparent', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer' }}>로그아웃</button>
+          <div className="header-actions">
+            <button onClick={() => setEditingItem(newItemDefaults())} style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', borderRadius: 8, padding: '8px 12px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, whiteSpace: 'nowrap' }}>+ 새 콘텐츠</button>
+            <span className="user-email">{userEmail}</span>
+            <button onClick={handleSignOut} style={{ background: 'transparent', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer', whiteSpace: 'nowrap' }}>로그아웃</button>
           </div>
         </div>
 
@@ -378,7 +408,7 @@ export default function App({ session }) {
             <div className="dow-row">{dayLabels.map(label => <div key={label}>{label}</div>)}</div>
             <div className="cal-grid">
               {cells.map(cell => {
-                if (cell.empty) return <div key={cell.key} style={{ minHeight: 90 }} />;
+                if (cell.empty) return <div key={cell.key} className="cal-cell-empty" />;
                 const dayClass = cell.dow === 0 ? 'sun' : cell.dow === 6 ? 'sat' : '';
                 const isDragOver = dragOverDate === cell.dateStr;
                 return (

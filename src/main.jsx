@@ -20,7 +20,35 @@ function Root() {
       setSession(session);
     });
 
-    return () => subscription.unsubscribe();
+    // 탭이 다시 활성화될 때 세션 재검증
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+          if (currentSession) {
+            // 토큰 만료 임박 시 갱신
+            const expiresAt = currentSession.expires_at;
+            const now = Math.floor(Date.now() / 1000);
+            if (expiresAt && expiresAt - now < 600) {
+              // 10분 이내 만료 → 갱신
+              supabase.auth.refreshSession();
+            }
+          }
+        });
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // 네트워크 복구 시 세션 재검증
+    const handleOnline = () => {
+      supabase.auth.getSession();
+    };
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      subscription.unsubscribe();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('online', handleOnline);
+    };
   }, []);
 
   if (loading) {
