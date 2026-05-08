@@ -357,8 +357,8 @@ export default function App({ session }) {
         .app-root { padding: 1.5rem 1rem; }
         @media (max-width: 640px) { .app-root { padding: 1rem 0.75rem; } }
         @media (max-width: 380px) { .app-root { padding: 0.75rem 0.5rem; } }
-        .cal-cell { background: #FFFFFF; border-radius: 8px; padding: 8px 6px; min-height: 90px; position: relative; transition: background 0.15s, box-shadow 0.15s; }
-        .cal-cell-empty { min-height: 90px; }
+        .cal-cell { background: #FFFFFF; border-radius: 8px; padding: 6px 6px 4px; min-height: 110px; max-height: 180px; position: relative; transition: background 0.15s, box-shadow 0.15s; display: flex; flex-direction: column; overflow: hidden; }
+        .cal-cell-empty { min-height: 110px; max-height: 180px; }
         .cal-cell.holiday { background: #FAF9F5; }
         .cal-cell.drag-over { background: #F0EDE0; box-shadow: inset 0 0 0 2px #1A1A1A; }
         .cal-cell .day-num { font-size: 13px; font-weight: 500; }
@@ -368,7 +368,7 @@ export default function App({ session }) {
         .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
         .dow-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
         .dow-row > div { font-size: 11px; color: #5F5E5A; text-align: center; padding: 6px 0; }
-        .cal-item { width: 100%; padding: 2px 4px; border-radius: 3px; font-size: 9px; margin-top: 2px; cursor: grab; border: none; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: inherit; transition: opacity 0.15s, transform 0.1s; }
+        .cal-item { width: 100%; padding: 3px 5px; border-radius: 4px; font-size: 10px; margin-top: 2px; cursor: grab; border: none; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: inherit; transition: opacity 0.15s, transform 0.1s; line-height: 1.4; }
         .cal-item:active { cursor: grabbing; }
         .cal-item.completed { opacity: 0.5; text-decoration: line-through; }
         .cal-item.dragging { opacity: 0.3; transform: scale(0.95); }
@@ -385,16 +385,23 @@ export default function App({ session }) {
         .view-toggle-btn.active { background: #1A1A1A; color: #FFFFFF; }
         .view-toggle-btn:hover:not(.active) { color: #1A1A1A; }
 
-        .list-view { display: flex; flex-direction: column; gap: 12px; }
-        .list-day { background: #FFFFFF; border-radius: 12px; overflow: hidden; }
-        .list-day-header { padding: 12px 16px; border-bottom: 0.5px solid rgba(0,0,0,0.06); display: flex; justify-content: space-between; align-items: center; }
-        .list-day-date { font-size: 15px; font-weight: 600; color: #1A1A1A; }
-        .list-day-date .dow { font-size: 13px; color: #5F5E5A; margin-left: 6px; font-weight: 400; }
+        .list-view { display: flex; flex-direction: column; gap: 8px; }
+        .list-day { background: #FFFFFF; border-radius: 12px; overflow: hidden; transition: box-shadow 0.15s; }
+        .list-day.expanded { box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+        .list-day-header-btn { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 14px 16px; background: transparent; border: none; cursor: pointer; font-family: inherit; text-align: left; transition: background 0.1s; }
+        .list-day-header-btn:hover { background: #FAF9F5; }
+        .list-day.expanded .list-day-header-btn { border-bottom: 0.5px solid rgba(0,0,0,0.06); }
+        .list-arrow { display: inline-block; font-size: 18px; color: #888780; transition: transform 0.2s; flex-shrink: 0; line-height: 1; width: 14px; text-align: center; }
+        .list-arrow.expanded { transform: rotate(90deg); }
+        .list-day-date { font-size: 15px; font-weight: 600; color: #1A1A1A; display: flex; align-items: center; gap: 4px; }
+        .list-day-date .dow { font-size: 13px; color: #5F5E5A; margin-left: 2px; font-weight: 400; }
         .list-day-date .dow.sun { color: #D4537E; }
         .list-day-date .dow.sat { color: #5C7AA8; }
+        .today-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #1A1A1A; margin-right: 6px; }
         .list-day-event { font-size: 12px; color: #888780; }
         .list-day-event.holiday { color: #D4537E; }
-        .list-items { padding: 6px 0; }
+        .list-day-count { font-size: 12px; color: #5F5E5A; padding: 3px 8px; background: #F4F2EC; border-radius: 10px; font-weight: 500; }
+        .list-items { padding: 4px 0 8px; }
         .list-item { display: flex; gap: 10px; padding: 10px 16px; cursor: pointer; align-items: center; transition: background 0.1s; border: none; background: transparent; width: 100%; text-align: left; font-family: inherit; }
         .list-item:hover { background: #F8F8F6; }
         .list-item-dot { width: 4px; align-self: stretch; min-height: 32px; border-radius: 2px; flex-shrink: 0; }
@@ -415,11 +422,11 @@ export default function App({ session }) {
         .week-item.completed { opacity: 0.5; text-decoration: line-through; }
 
         @media (max-width: 640px) {
-          .cal-cell { min-height: 70px; padding: 4px 3px; }
-          .cal-cell-empty { min-height: 70px; }
+          .cal-cell { min-height: 90px; max-height: 140px; padding: 5px 4px; }
+          .cal-cell-empty { min-height: 90px; max-height: 140px; }
           .cal-cell .day-num { font-size: 11px; }
           .day-event { font-size: 8px; }
-          .cal-item { font-size: 8px; padding: 2px 3px; }
+          .cal-item { font-size: 9px; padding: 2px 4px; }
           .modal-overlay { padding: 0; align-items: flex-end; }
           .modal-content { border-radius: 16px 16px 0 0; max-height: 92vh; padding: 18px; max-width: 100%; }
           .header-row { gap: 8px; }
@@ -433,16 +440,17 @@ export default function App({ session }) {
           .week-cell { min-height: 240px; padding: 8px 5px; }
           .week-cell-day { font-size: 15px; }
           .week-item { font-size: 10px; padding: 4px 5px; }
-          .list-day-header { padding: 10px 12px; }
+          .list-day-header-btn { padding: 12px 14px; }
           .list-day-date { font-size: 14px; }
-          .list-item { padding: 10px 12px; gap: 8px; }
+          .list-day-count { font-size: 11px; padding: 2px 7px; }
+          .list-item { padding: 10px 14px; gap: 8px; }
           .list-item-title { font-size: 13px; }
         }
         @media (max-width: 380px) {
-          .cal-cell { min-height: 60px; padding: 3px 2px; }
-          .cal-cell-empty { min-height: 60px; }
+          .cal-cell { min-height: 80px; max-height: 120px; padding: 4px 3px; }
+          .cal-cell-empty { min-height: 80px; max-height: 120px; }
           .cal-cell .day-num { font-size: 10px; }
-          .cal-item { font-size: 7px; padding: 1px 2px; }
+          .cal-item { font-size: 8px; padding: 2px 3px; }
           .day-event { font-size: 7px; }
           .month-title { font-size: 15px; }
           .user-email { display: none; }
@@ -906,14 +914,16 @@ function DeleteSheet({ itemTitle, onCancel, onConfirm }) {
 // 리스트뷰
 // ============================================================
 function ListView({ items, currentMonth, holidays, anniversaries, onItemClick }) {
-  // 날짜별 그룹화 + 해당 월 내의 콘텐츠가 있는 날만
   const dayLabelsLocal = ['일', '월', '화', '수', '목', '금', '토'];
   const [yearStr, monthStr] = currentMonth.split('-');
   const yearNum = parseInt(yearStr, 10);
   const monthNum = parseInt(monthStr, 10);
   const lastDay = new Date(yearNum, monthNum, 0).getDate();
 
-  // 콘텐츠가 있는 날짜만 추출
+  // 오늘 날짜 (당월일 때만 자동 펼침)
+  const todayDate = new Date();
+  const todayStr = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, '0')}-${String(todayDate.getDate()).padStart(2, '0')}`;
+
   const datesWithItems = new Set(items.map(it => it.date));
   const dates = [];
   for (let d = 1; d <= lastDay; d++) {
@@ -922,6 +932,25 @@ function ListView({ items, currentMonth, holidays, anniversaries, onItemClick })
       dates.push(dateStr);
     }
   }
+
+  // 펼침 상태 — 오늘만 기본 펼침
+  const [expandedDates, setExpandedDates] = useState(() => {
+    const initial = new Set();
+    if (dates.includes(todayStr)) initial.add(todayStr);
+    return initial;
+  });
+
+  const toggleDate = (dateStr) => {
+    setExpandedDates(prev => {
+      const next = new Set(prev);
+      if (next.has(dateStr)) next.delete(dateStr);
+      else next.add(dateStr);
+      return next;
+    });
+  };
+
+  const expandAll = () => setExpandedDates(new Set(dates));
+  const collapseAll = () => setExpandedDates(new Set());
 
   if (dates.length === 0) {
     return (
@@ -934,8 +963,24 @@ function ListView({ items, currentMonth, holidays, anniversaries, onItemClick })
     );
   }
 
+  const totalItems = items.length;
+  const completedItems = items.filter(it => it.completed).length;
+  const allExpanded = dates.every(d => expandedDates.has(d));
+
   return (
     <div className="list-view">
+      {/* 요약 + 전체 펼침/접힘 */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 4px', marginBottom: 4 }}>
+        <div style={{ fontSize: 13, color: '#5F5E5A' }}>
+          이번 달 <strong style={{ color: '#1A1A1A' }}>{totalItems}편</strong>
+          <span style={{ color: '#888780' }}> · 발행 {completedItems}편 ({totalItems > 0 ? Math.round(completedItems / totalItems * 100) : 0}%)</span>
+        </div>
+        <button
+          onClick={allExpanded ? collapseAll : expandAll}
+          style={{ background: 'transparent', border: 'none', color: '#5F5E5A', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', padding: '4px 8px' }}
+        >{allExpanded ? '모두 접기' : '모두 펼치기'}</button>
+      </div>
+
       {dates.map(dateStr => {
         const [, , dayStr] = dateStr.split('-');
         const day = parseInt(dayStr, 10);
@@ -946,21 +991,40 @@ function ListView({ items, currentMonth, holidays, anniversaries, onItemClick })
         const dayItems = items.filter(it => it.date === dateStr);
         const holiday = holidays[dateStr];
         const anniversary = anniversaries[dateStr];
+        const isExpanded = expandedDates.has(dateStr);
+        const dayCompletedCount = dayItems.filter(it => it.completed).length;
+        const isToday = dateStr === todayStr;
 
         return (
-          <div key={dateStr} className="list-day">
-            <div className="list-day-header">
-              <div className="list-day-date">
-                {monthNum}월 {day}일
-                <span className={`dow ${dowClass}`}>({dowLabel})</span>
-              </div>
-              {(holiday || anniversary) && (
-                <div className={`list-day-event ${holiday ? 'holiday' : ''}`}>
-                  {holiday || anniversary}
+          <div key={dateStr} className={`list-day ${isExpanded ? 'expanded' : ''}`}>
+            <button
+              className="list-day-header-btn"
+              onClick={() => toggleDate(dateStr)}
+              type="button"
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                <span className={`list-arrow ${isExpanded ? 'expanded' : ''}`}>›</span>
+                <div className="list-day-date">
+                  {isToday && <span className="today-dot" />}
+                  {monthNum}월 {day}일
+                  <span className={`dow ${dowClass}`}>({dowLabel})</span>
                 </div>
-              )}
-            </div>
-            {dayItems.length > 0 && (
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                {(holiday || anniversary) && (
+                  <span className={`list-day-event ${holiday ? 'holiday' : ''}`}>
+                    {holiday || anniversary}
+                  </span>
+                )}
+                {dayItems.length > 0 && (
+                  <span className="list-day-count">
+                    {dayItems.length}편
+                    {dayCompletedCount > 0 && <span style={{ color: '#3A7D3A', marginLeft: 4 }}>· {dayCompletedCount}</span>}
+                  </span>
+                )}
+              </div>
+            </button>
+            {isExpanded && dayItems.length > 0 && (
               <div className="list-items">
                 {dayItems.map(it => {
                   const c = COLORS[it.channel] || { bg: '#F0F0EB', fg: '#1A1A1A' };
@@ -994,9 +1058,6 @@ function ListView({ items, currentMonth, holidays, anniversaries, onItemClick })
   );
 }
 
-// ============================================================
-// 주간뷰
-// ============================================================
 function WeekView({ weekStart, setWeekStart, items, holidays, anniversaries, onItemClick, draggingId, dragOverDate, handleDragStart, handleDragEnd, handleDragOver, handleDragLeave, handleDrop }) {
   const dayLabelsLocal = ['일', '월', '화', '수', '목', '금', '토'];
 
