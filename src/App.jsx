@@ -98,6 +98,8 @@ export default function App({ session }) {
   const [editingItem, setEditingItem] = useState(null);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [deleteSheet, setDeleteSheet] = useState(null);
+  const [draggingId, setDraggingId] = useState(null);
+  const [dragOverDate, setDragOverDate] = useState(null);
 
   const loadMonthData = useCallback(async () => {
     setLoading(true);
@@ -214,6 +216,52 @@ export default function App({ session }) {
     }
   };
 
+  // ============================================
+  // 드래그앤드롭
+  // ============================================
+  const moveItem = async (itemId, newDate) => {
+    try {
+      const item = items.find(i => i.id === itemId);
+      if (!item || item.date === newDate) return;
+      const { error } = await supabase.from('items').update({ date: newDate }).eq('id', itemId);
+      if (error) throw error;
+      setItems(prev => prev.map(i => i.id === itemId ? { ...i, date: newDate } : i));
+    } catch (err) {
+      alert('일정 변경 실패: ' + (err.message || err));
+    }
+  };
+
+  const handleDragStart = (e, itemId) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', itemId);
+    setDraggingId(itemId);
+  };
+
+  const handleDragEnd = () => {
+    setDraggingId(null);
+    setDragOverDate(null);
+  };
+
+  const handleDragOver = (e, dateStr) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverDate !== dateStr) setDragOverDate(dateStr);
+  };
+
+  const handleDragLeave = (e, dateStr) => {
+    // relatedTarget이 같은 셀 안인지 확인
+    if (e.currentTarget.contains(e.relatedTarget)) return;
+    if (dragOverDate === dateStr) setDragOverDate(null);
+  };
+
+  const handleDrop = async (e, dateStr) => {
+    e.preventDefault();
+    const itemId = e.dataTransfer.getData('text/plain');
+    setDraggingId(null);
+    setDragOverDate(null);
+    if (itemId) await moveItem(itemId, dateStr);
+  };
+
   const updatePerformance = (itemId, field, value) => {
     setPerformance(prev => ({ ...prev, [itemId]: { ...(prev[itemId] || {}), [field]: value } }));
   };
@@ -282,8 +330,9 @@ export default function App({ session }) {
         * { box-sizing: border-box; }
         @keyframes sheetFadeIn { from { background: rgba(0,0,0,0); } to { background: rgba(0,0,0,0.5); } }
         @keyframes sheetSlideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
-        .cal-cell { background: #FFFFFF; border-radius: 8px; padding: 8px 6px; min-height: 90px; position: relative; transition: background 0.15s; }
+        .cal-cell { background: #FFFFFF; border-radius: 8px; padding: 8px 6px; min-height: 90px; position: relative; transition: background 0.15s, box-shadow 0.15s; }
         .cal-cell.holiday { background: #FAF9F5; }
+        .cal-cell.drag-over { background: #F0EDE0; box-shadow: inset 0 0 0 2px #1A1A1A; }
         .cal-cell .day-num { font-size: 13px; font-weight: 500; }
         .cal-cell .day-num.sun { color: #D4537E; }
         .cal-cell .day-num.sat { color: #5C7AA8; }
@@ -291,8 +340,10 @@ export default function App({ session }) {
         .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
         .dow-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
         .dow-row > div { font-size: 11px; color: #5F5E5A; text-align: center; padding: 6px 0; }
-        .cal-item { width: 100%; padding: 2px 4px; border-radius: 3px; font-size: 9px; margin-top: 2px; cursor: pointer; border: none; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: inherit; }
+        .cal-item { width: 100%; padding: 2px 4px; border-radius: 3px; font-size: 9px; margin-top: 2px; cursor: grab; border: none; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: inherit; transition: opacity 0.15s, transform 0.1s; }
+        .cal-item:active { cursor: grabbing; }
         .cal-item.completed { opacity: 0.5; text-decoration: line-through; }
+        .cal-item.dragging { opacity: 0.3; transform: scale(0.95); }
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 1000; }
         .modal-content { background: #FFFFFF; border-radius: 12px; padding: 22px; max-width: 480px; width: 100%; max-height: 90vh; overflow: auto; }
         @media (max-width: 640px) {
@@ -329,15 +380,34 @@ export default function App({ session }) {
               {cells.map(cell => {
                 if (cell.empty) return <div key={cell.key} style={{ minHeight: 90 }} />;
                 const dayClass = cell.dow === 0 ? 'sun' : cell.dow === 6 ? 'sat' : '';
+                const isDragOver = dragOverDate === cell.dateStr;
                 return (
-                  <div key={cell.key} className={`cal-cell ${cell.holiday ? 'holiday' : ''}`}>
+                  <div
+                    key={cell.key}
+                    className={`cal-cell ${cell.holiday ? 'holiday' : ''} ${isDragOver ? 'drag-over' : ''}`}
+                    onDragOver={(e) => handleDragOver(e, cell.dateStr)}
+                    onDragLeave={(e) => handleDragLeave(e, cell.dateStr)}
+                    onDrop={(e) => handleDrop(e, cell.dateStr)}
+                  >
                     <div className={`day-num ${dayClass}`}>{cell.day}</div>
                     {cell.holiday && <div className="day-event" style={{ color: '#D4537E', fontWeight: 500 }}>{cell.holiday}</div>}
                     {cell.anniversary && <div className="day-event">{cell.anniversary}</div>}
                     {cell.dayItems.map(it => {
                       const c = COLORS[it.channel] || { bg: '#F0F0EB', fg: '#1A1A1A' };
+                      const isDragging = draggingId === it.id;
                       return (
-                        <button key={it.id} className={`cal-item ${it.completed ? 'completed' : ''}`} style={{ background: c.bg, color: c.fg }} onClick={() => setSelectedItem(it)}>
+                        <button
+                          key={it.id}
+                          className={`cal-item ${it.completed ? 'completed' : ''} ${isDragging ? 'dragging' : ''}`}
+                          style={{ background: c.bg, color: c.fg }}
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, it.id)}
+                          onDragEnd={handleDragEnd}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!isDragging) setSelectedItem(it);
+                          }}
+                        >
                           {it.isCore && '★ '}{it.title}
                         </button>
                       );
