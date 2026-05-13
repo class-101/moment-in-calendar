@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from './supabaseClient';
 
 // ============================================================
@@ -65,7 +65,10 @@ const dbToItem = (row) => ({
   asset: row.asset,
   nextSkill: row.next_skill,
   description: row.description || '',
-  completed: row.completed
+  completed: row.completed,
+  archived: !!row.archived,
+  archivedAt: row.archived_at || null,
+  archiveReason: row.archive_reason || ''
 });
 
 const itemToDb = (item, userId) => ({
@@ -83,7 +86,10 @@ const itemToDb = (item, userId) => ({
   asset: item.asset || null,
   next_skill: item.nextSkill || null,
   description: item.description || null,
-  completed: !!item.completed
+  completed: !!item.completed,
+  archived: !!item.archived,
+  archived_at: item.archivedAt || null,
+  archive_reason: item.archiveReason || null
 });
 
 export default function App({ session }) {
@@ -102,6 +108,15 @@ export default function App({ session }) {
   const [deleteSheet, setDeleteSheet] = useState(null);
   const [draggingId, setDraggingId] = useState(null);
   const [dragOverDate, setDragOverDate] = useState(null);
+
+  // 우클릭 컨텍스트 메뉴
+  const [contextMenu, setContextMenu] = useState(null); // { x, y, item } | null
+  // 보관함 모달
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archiveItems, setArchiveItems] = useState([]);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  // 보관 사유 입력 시트
+  const [archiveSheet, setArchiveSheet] = useState(null); // { itemId, title } | null
 
   // 뷰 모드: 'month' | 'week' | 'list' | 'kpi'
   const [viewMode, setViewMode] = useState(() => {
@@ -148,6 +163,7 @@ export default function App({ session }) {
       const { data: itemsData, error: itemsErr } = await supabase
         .from('items').select('*')
         .gte('date', startDate).lte('date', endDate)
+        .or('archived.is.null,archived.eq.false')
         .order('date', { ascending: true })
         .order('time', { ascending: true });
       if (itemsErr) throw itemsErr;
@@ -233,6 +249,69 @@ export default function App({ session }) {
     } catch (err) {
       alert('삭제 실패: ' + (err.message || err));
     }
+  };
+
+  // ============================================
+  // 보관함 (Archive)
+  // ============================================
+  const moveToArchive = async (itemId, reason = '') => {
+    try {
+      const { error } = await supabase.from('items').update({
+        archived: true,
+        archived_at: new Date().toISOString(),
+        archive_reason: reason || null
+      }).eq('id', itemId);
+      if (error) throw error;
+      setItems(prev => prev.filter(i => i.id !== itemId));
+    } catch (err) {
+      alert('보관 실패: ' + (err.message || err));
+    }
+  };
+
+  const restoreFromArchive = async (itemId) => {
+    try {
+      const { error } = await supabase.from('items').update({
+        archived: false,
+        archived_at: null,
+        archive_reason: null
+      }).eq('id', itemId);
+      if (error) throw error;
+      setArchiveItems(prev => prev.filter(i => i.id !== itemId));
+      await loadMonthData(); // 현재 월에 해당하면 다시 표시
+    } catch (err) {
+      alert('복원 실패: ' + (err.message || err));
+    }
+  };
+
+  const deleteFromArchive = async (itemId) => {
+    try {
+      const { error } = await supabase.from('items').delete().eq('id', itemId);
+      if (error) throw error;
+      setArchiveItems(prev => prev.filter(i => i.id !== itemId));
+    } catch (err) {
+      alert('영구 삭제 실패: ' + (err.message || err));
+    }
+  };
+
+  const loadArchive = async () => {
+    setArchiveLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('items').select('*')
+        .eq('archived', true)
+        .order('archived_at', { ascending: false });
+      if (error) throw error;
+      setArchiveItems((data || []).map(dbToItem));
+    } catch (err) {
+      alert('보관함 로드 실패: ' + (err.message || err));
+    } finally {
+      setArchiveLoading(false);
+    }
+  };
+
+  const openArchive = async () => {
+    setArchiveOpen(true);
+    await loadArchive();
   };
 
   const toggleCompleted = async (itemId) => {
@@ -560,6 +639,7 @@ export default function App({ session }) {
             </div>
             <div className="header-actions">
               <button onClick={() => setEditingItem(newItemDefaults())} style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', borderRadius: 8, padding: '8px 12px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, whiteSpace: 'nowrap' }}>+ 새 콘텐츠</button>
+              <button onClick={openArchive} style={{ background: 'transparent', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer', whiteSpace: 'nowrap' }} title="보관함">📦 보관함</button>
               <span className="user-email">{userEmail}</span>
               <button onClick={handleSignOut} style={{ background: 'transparent', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer', whiteSpace: 'nowrap' }}>로그아웃</button>
             </div>
@@ -726,6 +806,11 @@ export default function App({ session }) {
                             e.stopPropagation();
                             if (!isDragging) setSelectedItem(it);
                           }}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setContextMenu({ x: e.clientX, y: e.clientY, item: it });
+                          }}
                         >
                           {it.isCore && '★ '}{it.title}
                         </button>
@@ -746,6 +831,11 @@ export default function App({ session }) {
             holidays={HOLIDAYS}
             anniversaries={ANNIVERSARIES}
             onItemClick={setSelectedItem}
+            onItemContextMenu={(e, it) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setContextMenu({ x: e.clientX, y: e.clientY, item: it });
+            }}
             draggingId={draggingId}
             dragOverDate={dragOverDate}
             handleDragStart={handleDragStart}
@@ -764,6 +854,11 @@ export default function App({ session }) {
             holidays={HOLIDAYS}
             anniversaries={ANNIVERSARIES}
             onItemClick={setSelectedItem}
+            onItemContextMenu={(e, it) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setContextMenu({ x: e.clientX, y: e.clientY, item: it });
+            }}
             onAddClick={(dateStr) => setEditingItem(newItemDefaults(dateStr))}
           />
         )}
@@ -781,6 +876,11 @@ export default function App({ session }) {
             onUpdatePerformance={(field, value) => updatePerformance(selectedItem.id, field, value)}
             onEdit={() => { setEditingItem({ ...selectedItem }); setSelectedItem(null); setMoreMenuOpen(false); }}
             onDuplicate={() => { duplicateItem(selectedItem.id); setSelectedItem(null); setMoreMenuOpen(false); }}
+            onArchive={() => {
+              setMoreMenuOpen(false);
+              setArchiveSheet({ itemId: selectedItem.id, title: selectedItem.title });
+              setSelectedItem(null);
+            }}
             onDelete={() => { setMoreMenuOpen(false); setDeleteSheet(selectedItem.id); }}
             moreMenuOpen={moreMenuOpen}
             setMoreMenuOpen={setMoreMenuOpen}
@@ -802,6 +902,44 @@ export default function App({ session }) {
             }}
           />
         )}
+
+        {contextMenu && (
+          <ContextMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            onClose={() => setContextMenu(null)}
+            actions={[
+              { icon: '📋', label: '상세보기', onClick: () => { setSelectedItem(contextMenu.item); setContextMenu(null); } },
+              { icon: '✏️', label: '수정', onClick: () => { setEditingItem({ ...contextMenu.item }); setContextMenu(null); } },
+              { icon: '🔁', label: '복제', onClick: () => { duplicateItem(contextMenu.item.id); setContextMenu(null); } },
+              { icon: contextMenu.item.completed ? '↻' : '✓', label: contextMenu.item.completed ? '완료 취소' : '발행 완료', onClick: () => { toggleCompleted(contextMenu.item.id); setContextMenu(null); } },
+              { divider: true },
+              { icon: '📦', label: '보관함으로', onClick: () => { setArchiveSheet({ itemId: contextMenu.item.id, title: contextMenu.item.title }); setContextMenu(null); } },
+              { icon: '🗑️', label: '영구 삭제', danger: true, onClick: () => { setDeleteSheet(contextMenu.item.id); setContextMenu(null); } }
+            ]}
+          />
+        )}
+
+        {archiveSheet && (
+          <ArchiveSheet
+            itemTitle={archiveSheet.title}
+            onCancel={() => setArchiveSheet(null)}
+            onConfirm={async (reason) => {
+              await moveToArchive(archiveSheet.itemId, reason);
+              setArchiveSheet(null);
+            }}
+          />
+        )}
+
+        {archiveOpen && (
+          <ArchiveModal
+            items={archiveItems}
+            loading={archiveLoading}
+            onClose={() => setArchiveOpen(false)}
+            onRestore={restoreFromArchive}
+            onDelete={deleteFromArchive}
+          />
+        )}
       </div>
     </div>
   );
@@ -813,7 +951,7 @@ const navBtnStyle = {
   display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, fontFamily: 'inherit'
 };
 
-function DetailModal({ item, performance, onClose, onToggleCompleted, onUpdatePerformance, onEdit, onDuplicate, onDelete, moreMenuOpen, setMoreMenuOpen }) {
+function DetailModal({ item, performance, onClose, onToggleCompleted, onUpdatePerformance, onEdit, onDuplicate, onArchive, onDelete, moreMenuOpen, setMoreMenuOpen }) {
   const channelColor = COLORS[item.channel]?.bg || '#888780';
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -825,10 +963,12 @@ function DetailModal({ item, performance, onClose, onToggleCompleted, onUpdatePe
             {moreMenuOpen && (
               <>
                 <div onClick={() => setMoreMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1099 }} />
-                <div style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, background: '#FFFFFF', border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.10)', padding: 4, minWidth: 140, zIndex: 1100 }}>
-                  <button onClick={onEdit} style={moreMenuItemStyle}>수정</button>
-                  <button onClick={onDuplicate} style={moreMenuItemStyle}>복제</button>
-                  <button onClick={onDelete} style={{ ...moreMenuItemStyle, color: '#D4537E' }}>삭제</button>
+                <div style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, background: '#FFFFFF', border: '0.5px solid rgba(0,0,0,0.12)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.10)', padding: 4, minWidth: 160, zIndex: 1100 }}>
+                  <button onClick={onEdit} style={moreMenuItemStyle}>✏️ 수정</button>
+                  <button onClick={onDuplicate} style={moreMenuItemStyle}>🔁 복제</button>
+                  <div style={{ height: 1, background: 'rgba(0,0,0,0.06)', margin: '4px 0' }} />
+                  <button onClick={onArchive} style={moreMenuItemStyle}>📦 보관함으로</button>
+                  <button onClick={onDelete} style={{ ...moreMenuItemStyle, color: '#D4537E' }}>🗑️ 영구 삭제</button>
                 </div>
               </>
             )}
@@ -1128,7 +1268,7 @@ function DeleteSheet({ itemTitle, onCancel, onConfirm }) {
 // ============================================================
 // 리스트뷰
 // ============================================================
-function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, onAddClick }) {
+function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, onItemContextMenu, onAddClick }) {
   const dayLabelsLocal = ['일', '월', '화', '수', '목', '금', '토'];
   const [yearStr, monthStr] = currentMonth.split('-');
   const yearNum = parseInt(yearStr, 10);
@@ -1258,6 +1398,7 @@ function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, o
                       key={it.id}
                       className="list-item"
                       onClick={() => onItemClick(it)}
+                      onContextMenu={(e) => onItemContextMenu && onItemContextMenu(e, it)}
                     >
                       <div className="list-item-dot" style={{ background: c.bg }} />
                       <div className="list-item-content">
@@ -1283,7 +1424,7 @@ function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, o
   );
 }
 
-function WeekView({ weekStart, setWeekStart, items, holidays, anniversaries, onItemClick, draggingId, dragOverDate, handleDragStart, handleDragEnd, handleDragOver, handleDragLeave, handleDrop, isMobile }) {
+function WeekView({ weekStart, setWeekStart, items, holidays, anniversaries, onItemClick, onItemContextMenu, draggingId, dragOverDate, handleDragStart, handleDragEnd, handleDragOver, handleDragLeave, handleDrop, isMobile }) {
   const dayLabelsLocal = ['일', '월', '화', '수', '목', '금', '토'];
 
   const weekDates = [];
@@ -1336,7 +1477,9 @@ function WeekView({ weekStart, setWeekStart, items, holidays, anniversaries, onI
                     {dayItems.map(it => {
                       const c = COLORS[it.channel] || { bg: '#F0F0EB', fg: '#1A1A1A' };
                       return (
-                        <button key={it.id} onClick={() => onItemClick(it)}
+                        <button key={it.id}
+                          onClick={() => onItemClick(it)}
+                          onContextMenu={(e) => onItemContextMenu && onItemContextMenu(e, it)}
                           style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 14px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
                           <span style={{ width: 4, height: 4, borderRadius: '50%', background: c.fg, flexShrink: 0 }} />
                           <span style={{ fontSize: 13, color: it.completed ? '#aaa' : '#1A1A1A', textDecoration: it.completed ? 'line-through' : 'none', flex: 1 }}>
@@ -1385,6 +1528,7 @@ function WeekView({ weekStart, setWeekStart, items, holidays, anniversaries, onI
                         onDragStart={(e) => handleDragStart(e, it.id)}
                         onDragEnd={handleDragEnd}
                         onClick={(e) => { e.stopPropagation(); if (!isDragging) onItemClick(it); }}
+                        onContextMenu={(e) => onItemContextMenu && onItemContextMenu(e, it)}
                       >{it.isCore && '★ '}{it.title}</button>
                     );
                   })}
@@ -1575,6 +1719,274 @@ function KpiCard({ label, value, sub, accent }) {
       <div className="kpi-card-label">{label}</div>
       <div className="kpi-card-value" style={{ color: accent || '#1A1A1A' }}>{value}</div>
       {sub && <div className="kpi-card-sub" style={{ color: accent || '#888780' }}>{sub}</div>}
+    </div>
+  );
+}
+
+// ============================================================
+// 우클릭 컨텍스트 메뉴 (Context Menu)
+// ============================================================
+function ContextMenu({ x, y, actions, onClose }) {
+  const menuRef = useRef(null);
+  const [position, setPosition] = useState({ x, y });
+
+  useEffect(() => {
+    if (menuRef.current) {
+      const rect = menuRef.current.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      let nx = x;
+      let ny = y;
+      if (x + rect.width > vw - 8) nx = vw - rect.width - 8;
+      if (y + rect.height > vh - 8) ny = vh - rect.height - 8;
+      if (nx < 8) nx = 8;
+      if (ny < 8) ny = 8;
+      setPosition({ x: nx, y: ny });
+    }
+    const onClick = () => onClose();
+    const onEsc = (e) => { if (e.key === 'Escape') onClose(); };
+    const onScroll = () => onClose();
+    setTimeout(() => {
+      document.addEventListener('click', onClick);
+      document.addEventListener('contextmenu', onClick);
+    }, 0);
+    document.addEventListener('keydown', onEsc);
+    window.addEventListener('scroll', onScroll, true);
+    return () => {
+      document.removeEventListener('click', onClick);
+      document.removeEventListener('contextmenu', onClick);
+      document.removeEventListener('keydown', onEsc);
+      window.removeEventListener('scroll', onScroll, true);
+    };
+  }, [x, y, onClose]);
+
+  return (
+    <div
+      ref={menuRef}
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        position: 'fixed',
+        left: position.x,
+        top: position.y,
+        background: '#FFFFFF',
+        border: '0.5px solid rgba(0,0,0,0.12)',
+        borderRadius: 10,
+        boxShadow: '0 12px 32px rgba(0,0,0,0.16)',
+        padding: 4,
+        minWidth: 180,
+        zIndex: 2000,
+        fontFamily: "'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif"
+      }}
+    >
+      {actions.map((a, i) => {
+        if (a.divider) return <div key={i} style={{ height: 1, background: 'rgba(0,0,0,0.06)', margin: '4px 0' }} />;
+        return (
+          <button
+            key={i}
+            onClick={(e) => { e.stopPropagation(); a.onClick(); }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              width: '100%',
+              textAlign: 'left',
+              background: 'transparent',
+              border: 'none',
+              padding: '10px 14px',
+              cursor: 'pointer',
+              fontSize: 13,
+              fontFamily: 'inherit',
+              color: a.danger ? '#D4537E' : '#1A1A1A',
+              borderRadius: 6,
+              transition: 'background 0.1s'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = a.danger ? '#FCE8EE' : '#F4F2EC'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+          >
+            <span style={{ fontSize: 14, width: 18, textAlign: 'center', flexShrink: 0 }}>{a.icon}</span>
+            <span>{a.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ============================================================
+// 보관 사유 입력 시트
+// ============================================================
+function ArchiveSheet({ itemTitle, onCancel, onConfirm }) {
+  const [reason, setReason] = useState('');
+  const presets = ['자산 부족', '시즌 지남', '다양성 위반', '우선순위 밀림', '아이디어만 보존'];
+
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+        <div style={{ marginBottom: 14 }}>
+          <h3 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 6px' }}>📦 보관함으로 이동</h3>
+          <p style={{ fontSize: 13, color: '#5F5E5A', margin: 0, wordBreak: 'keep-all', lineHeight: 1.5 }}>"{itemTitle}"<br/>캘린더에서 사라지지만 보관함에서 언제든 복원할 수 있어요.</p>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 12, color: '#888780', fontWeight: 500, marginBottom: 8 }}>보관 사유 (선택)</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+            {presets.map(p => (
+              <button
+                key={p}
+                onClick={() => setReason(p)}
+                style={{
+                  background: reason === p ? '#1A1A1A' : '#F4F2EC',
+                  color: reason === p ? '#FFFFFF' : '#5F5E5A',
+                  border: 'none',
+                  borderRadius: 14,
+                  padding: '6px 12px',
+                  fontSize: 12,
+                  fontFamily: 'inherit',
+                  cursor: 'pointer'
+                }}
+              >{p}</button>
+            ))}
+          </div>
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="또는 직접 입력 (다음 캘린더 기획 시 참고용)"
+            rows={2}
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              border: 'none',
+              borderRadius: 8,
+              fontSize: 13,
+              fontFamily: 'inherit',
+              background: '#F4F2EC',
+              outline: 'none',
+              resize: 'vertical',
+              boxSizing: 'border-box',
+              minHeight: 48
+            }}
+          />
+        </div>
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={onCancel}
+            style={{
+              flex: 1,
+              padding: '12px',
+              background: 'transparent',
+              border: '0.5px solid rgba(0,0,0,0.18)',
+              borderRadius: 10,
+              fontSize: 14,
+              fontFamily: 'inherit',
+              color: '#1A1A1A',
+              cursor: 'pointer'
+            }}
+          >취소</button>
+          <button
+            onClick={() => onConfirm(reason.trim())}
+            style={{
+              flex: 1,
+              padding: '12px',
+              background: '#1A1A1A',
+              color: '#FFFFFF',
+              border: 'none',
+              borderRadius: 10,
+              fontSize: 14,
+              fontFamily: 'inherit',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >보관하기</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// 보관함 모달
+// ============================================================
+function ArchiveModal({ items, loading, onClose, onRestore, onDelete }) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560, padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
+        <div style={{ padding: '16px 20px', borderBottom: '0.5px solid rgba(0,0,0,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h3 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 2px' }}>📦 보관함</h3>
+            <p style={{ fontSize: 12, color: '#5F5E5A', margin: 0 }}>{items.length}개의 보관된 콘텐츠</p>
+          </div>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: 22, cursor: 'pointer', color: '#1A1A1A', padding: 4, lineHeight: 1 }}>×</button>
+        </div>
+
+        <div style={{ overflowY: 'auto', flex: 1, padding: '12px 16px' }}>
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: '40px 0', color: '#888780', fontSize: 13 }}>로딩 중...</div>
+          ) : items.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '60px 20px', color: '#888780' }}>
+              <div style={{ fontSize: 32, marginBottom: 12, opacity: 0.4 }}>📭</div>
+              <div style={{ fontSize: 13 }}>보관된 콘텐츠가 없습니다.</div>
+              <div style={{ fontSize: 11, marginTop: 6, color: '#A8A39A' }}>콘텐츠를 우클릭하거나 상세보기 ⋯ 메뉴에서<br/>"보관함으로" 를 선택하면 여기에 모입니다.</div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {items.map(it => {
+                const c = COLORS[it.channel] || { bg: '#F0F0EB', fg: '#1A1A1A' };
+                return (
+                  <div key={it.id} style={{ background: '#FFFFFF', border: '0.5px solid rgba(0,0,0,0.10)', borderRadius: 10, padding: '12px 14px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 2, background: c.bg, flexShrink: 0, marginTop: 6 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 11, color: '#888780', marginBottom: 3 }}>
+                        원래 {it.date.replace(/-/g, '.')} · {it.channelName}
+                        {it.archivedAt && <span> · 보관 {it.archivedAt.slice(0, 10).replace(/-/g, '.')}</span>}
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: '#1A1A1A', marginBottom: 4, wordBreak: 'keep-all', lineHeight: 1.4 }}>
+                        {it.isCore && '★ '}{it.title}
+                      </div>
+                      {it.archiveReason && (
+                        <div style={{ display: 'inline-block', fontSize: 11, color: '#5F5E5A', background: '#F4F2EC', padding: '3px 8px', borderRadius: 4 }}>
+                          사유: {it.archiveReason}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
+                      <button
+                        onClick={() => onRestore(it.id)}
+                        style={{
+                          padding: '6px 10px',
+                          fontSize: 11,
+                          fontFamily: 'inherit',
+                          background: '#E6F0E8',
+                          color: '#3A6B45',
+                          border: 'none',
+                          borderRadius: 6,
+                          cursor: 'pointer',
+                          fontWeight: 500
+                        }}
+                      >↩ 복원</button>
+                      <button
+                        onClick={() => {
+                          if (confirm('영구 삭제하시겠습니까? 복원할 수 없습니다.')) onDelete(it.id);
+                        }}
+                        style={{
+                          padding: '6px 10px',
+                          fontSize: 11,
+                          fontFamily: 'inherit',
+                          background: 'transparent',
+                          color: '#D4537E',
+                          border: '0.5px solid #F5C3CD',
+                          borderRadius: 6,
+                          cursor: 'pointer'
+                        }}
+                      >🗑️ 삭제</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
