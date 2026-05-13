@@ -431,6 +431,17 @@ export default function App({ session }) {
   const startDateObj = new Date(yearNum, monthNum - 1, 1);
   const startDay = startDateObj.getDay();
   const lastDay = new Date(yearNum, monthNum, 0).getDate();
+
+  // 오늘 + 이번 주 계산 (일요일 시작 기준)
+  const _todayObj = new Date();
+  const _todayStr = `${_todayObj.getFullYear()}-${String(_todayObj.getMonth() + 1).padStart(2, '0')}-${String(_todayObj.getDate()).padStart(2, '0')}`;
+  const _thisWeekStart = new Date(_todayObj);
+  _thisWeekStart.setDate(_todayObj.getDate() - _todayObj.getDay()); // 일요일
+  _thisWeekStart.setHours(0, 0, 0, 0);
+  const _thisWeekEnd = new Date(_thisWeekStart);
+  _thisWeekEnd.setDate(_thisWeekStart.getDate() + 6);
+  _thisWeekEnd.setHours(23, 59, 59, 999);
+
   const cells = [];
   for (let i = 0; i < startDay; i++) cells.push({ empty: true, key: `empty-${i}` });
   for (let d = 1; d <= lastDay; d++) {
@@ -438,7 +449,9 @@ export default function App({ session }) {
     const dt = new Date(yearNum, monthNum - 1, d);
     const dow = dt.getDay();
     const dayItems = filteredItems.filter(it => it.date === dateStr);
-    cells.push({ empty: false, key: dateStr, day: d, dow, dateStr, dayItems, holiday: HOLIDAYS[dateStr], anniversary: ANNIVERSARIES[dateStr] });
+    const isToday = dateStr === _todayStr;
+    const isThisWeek = dt >= _thisWeekStart && dt <= _thisWeekEnd;
+    cells.push({ empty: false, key: dateStr, day: d, dow, dateStr, dayItems, holiday: HOLIDAYS[dateStr], anniversary: ANNIVERSARIES[dateStr], isToday, isThisWeek });
   }
 
   const toggleChannelFilter = (channel) => {
@@ -487,16 +500,25 @@ export default function App({ session }) {
         @media (max-width: 380px) { .app-root { padding: 0.75rem 0.5rem; } }
         .cal-cell { background: #FFFFFF; border-radius: 8px; padding: 6px 6px 4px; min-height: 110px; max-height: 180px; position: relative; transition: background 0.15s, box-shadow 0.15s; display: flex; flex-direction: column; overflow: hidden; }
         .cal-cell-empty { min-height: 110px; max-height: 180px; }
-        .cal-cell.holiday { background: #FAF9F5; }
+        .cal-cell.holiday { background: #FDF0E8; }
         .cal-cell.drag-over { background: #F0EDE0; box-shadow: inset 0 0 0 2px #1A1A1A; }
-        .cal-cell .day-num { font-size: 13px; font-weight: 500; }
+        .cal-cell.today { background: #FFF8E7; box-shadow: 0 0 0 2px #1A1A1A, 0 2px 8px rgba(0,0,0,0.06); position: relative; z-index: 1; }
+        .cal-cell.today.holiday { background: #FFF0E0; }
+        .cal-cell .day-num { font-size: 15px; font-weight: 500; display: flex; align-items: center; gap: 5px; line-height: 1.1; }
         .cal-cell .day-num.sun { color: #D4537E; }
         .cal-cell .day-num.sat { color: #5C7AA8; }
-        .day-event { font-size: 9px; color: #888780; margin-top: 1px; }
+        .cal-cell.today .day-num .day-text { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 12px; background: #1A1A1A; color: #FFFFFF; font-weight: 600; font-size: 13px; }
+        .cal-cell.today .day-num.sun .day-text { background: #D4537E; }
+        .cal-cell.today .day-num.sat .day-text { background: #5C7AA8; }
+        .today-badge { display: inline-flex; align-items: center; font-size: 10px; background: #1A1A1A; color: #FFFFFF; padding: 1px 6px; border-radius: 3px; font-weight: 500; letter-spacing: 0.3px; line-height: 1.4; }
+        .day-event { font-size: 10.5px; color: #888780; margin-top: 2px; line-height: 1.3; }
         .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-        .dow-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
-        .dow-row > div { font-size: 11px; color: #5F5E5A; text-align: center; padding: 6px 0; }
-        .cal-item { width: 100%; padding: 3px 5px; border-radius: 4px; font-size: 10px; margin-top: 2px; cursor: grab; border: none; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: inherit; transition: opacity 0.15s, transform 0.1s; line-height: 1.4; }
+        .cal-grid.this-week { background: #FAF5E8; border-radius: 10px; padding: 4px; gap: 4px; margin-top: 4px; margin-bottom: 4px; }
+        .dow-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 6px; }
+        .dow-row > div { font-size: 12.5px; color: #5F5E5A; text-align: center; padding: 6px 0; font-weight: 500; }
+        .dow-row > div.sun { color: #D4537E; }
+        .dow-row > div.sat { color: #5C7AA8; }
+        .cal-item { width: 100%; padding: 4px 6px; border-radius: 4px; font-size: 11.5px; margin-top: 3px; cursor: grab; border: none; border-left: 3px solid; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: inherit; transition: opacity 0.15s, transform 0.1s; line-height: 1.35; font-weight: 500; }
         .cal-item:active { cursor: grabbing; }
         .cal-item.completed { opacity: 0.5; text-decoration: line-through; }
         .cal-item.dragging { opacity: 0.3; transform: scale(0.95); }
@@ -547,6 +569,7 @@ export default function App({ session }) {
 
         .list-view { display: flex; flex-direction: column; gap: 8px; }
         .list-day { background: #FFFFFF; border-radius: 12px; overflow: hidden; transition: box-shadow 0.15s; }
+        .list-day.today { background: #FFF8E7; box-shadow: 0 0 0 2px #1A1A1A, 0 2px 8px rgba(0,0,0,0.06); }
         .list-day.expanded { box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
         .list-day-header-btn { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 14px 16px; background: transparent; border: none; cursor: pointer; font-family: inherit; text-align: left; transition: background 0.1s; }
         .list-day-header-btn:hover { background: #FAF9F5; }
@@ -575,19 +598,26 @@ export default function App({ session }) {
 
         .week-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
         .week-grid { display: grid; grid-template-columns: repeat(7, minmax(120px, 1fr)); gap: 4px; width: 100%; min-width: 700px; }
-        .week-cell { background: #FFFFFF; border-radius: 8px; padding: 10px 8px; min-height: 320px; display: flex; flex-direction: column; overflow: hidden; }
-        .week-cell.holiday { background: #FAF9F5; }
-        .week-cell-header { padding-bottom: 8px; border-bottom: 0.5px solid rgba(0,0,0,0.06); margin-bottom: 8px; }
-        .week-cell-day { font-size: 18px; font-weight: 600; }
-        .week-cell-dow { font-size: 11px; color: #5F5E5A; }
+        .week-cell { background: #FFFFFF; border-radius: 8px; padding: 10px 8px; min-height: 320px; display: flex; flex-direction: column; overflow: hidden; transition: background 0.15s, box-shadow 0.15s; }
+        .week-cell.holiday { background: #FDF0E8; }
+        .week-cell.today { background: #FFF8E7; box-shadow: 0 0 0 2px #1A1A1A, 0 2px 8px rgba(0,0,0,0.06); }
+        .week-cell.today.holiday { background: #FFF0E0; }
+        .week-cell-header { padding-bottom: 8px; border-bottom: 0.5px solid rgba(0,0,0,0.06); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .week-cell-day { font-size: 20px; font-weight: 600; line-height: 1; }
+        .week-cell.today .week-cell-day { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 30px; padding: 0 8px; border-radius: 15px; background: #1A1A1A; color: #FFFFFF; font-size: 15px; }
+        .week-cell-dow { font-size: 12px; color: #5F5E5A; }
         .week-cell-items { display: flex; flex-direction: column; gap: 4px; flex: 1; }
-        .week-item { padding: 6px 8px; border-radius: 6px; font-size: 11px; cursor: grab; border: none; text-align: left; font-family: inherit; line-height: 1.3; word-break: keep-all; }
+        .week-item { padding: 7px 9px; border-radius: 6px; font-size: 12px; cursor: grab; border: none; text-align: left; font-family: inherit; line-height: 1.35; word-break: keep-all; font-weight: 500; }
         .week-item.completed { opacity: 0.5; text-decoration: line-through; }
 
         @media (max-width: 640px) {
           .cal-cell { min-height: 90px; max-height: 140px; padding: 5px 4px; }
           .cal-cell-empty { min-height: 90px; max-height: 140px; }
-          .cal-cell .day-num { font-size: 11px; }
+          .cal-cell .day-num { font-size: 13px; }
+          .cal-cell.today .day-num .day-text { min-width: 22px; height: 22px; font-size: 12px; }
+          .today-badge { font-size: 9px; padding: 1px 4px; }
+          .day-event { font-size: 9.5px; }
+          .cal-item { font-size: 11px; padding: 3px 5px; }
           .day-event { font-size: 8px; }
           .cal-item { font-size: 9px; padding: 2px 4px; }
           .modal-overlay { padding: 0; align-items: flex-end; }
@@ -597,15 +627,16 @@ export default function App({ session }) {
           .user-email { font-size: 11px; max-width: 100%; }
           .cal-grid { gap: 2px; }
           .dow-row { gap: 2px; }
-          .dow-row > div { font-size: 10px; padding: 4px 0; }
+          .dow-row > div { font-size: 11.5px; padding: 4px 0; }
           .control-bar { flex-direction: column; align-items: stretch; gap: 8px; }
           .view-toggle { max-width: 100%; }
           .view-toggle-btn { padding: 8px 8px; font-size: 12px; }
           .search-filter { width: 100%; }
           .search-box { flex: 1; min-width: 0; }
           .week-cell { min-height: 240px; padding: 8px 5px; }
-          .week-cell-day { font-size: 15px; }
-          .week-item { font-size: 10px; padding: 4px 5px; }
+          .week-cell-day { font-size: 17px; }
+          .week-cell.today .week-cell-day { min-width: 26px; height: 26px; font-size: 13px; }
+          .week-item { font-size: 11.5px; padding: 5px 6px; }
           .list-day-header-btn { padding: 12px 14px; }
           .list-day-date { font-size: 14px; }
           .list-day-count { font-size: 11px; padding: 2px 7px; }
@@ -768,58 +799,72 @@ export default function App({ session }) {
 
         {!loading && !error && viewMode === 'month' && (
           <>
-            <div className="dow-row">{dayLabels.map(label => <div key={label}>{label}</div>)}</div>
-            <div className="cal-grid">
-              {cells.map(cell => {
-                if (cell.empty) return <div key={cell.key} className="cal-cell-empty" />;
-                const dayClass = cell.dow === 0 ? 'sun' : cell.dow === 6 ? 'sat' : '';
-                const isDragOver = dragOverDate === cell.dateStr;
+            <div className="dow-row">{dayLabels.map((label, i) => (
+              <div key={label} className={i === 0 ? 'sun' : i === 6 ? 'sat' : ''}>{label}</div>
+            ))}</div>
+            {/* 주 단위로 7개씩 분할 */}
+            {(() => {
+              const weeks = [];
+              for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+              return weeks.map((week, wIdx) => {
+                const isThisWeekRow = week.some(c => !c.empty && c.isThisWeek);
                 return (
-                  <div
-                    key={cell.key}
-                    className={`cal-cell ${cell.holiday ? 'holiday' : ''} ${isDragOver ? 'drag-over' : ''}`}
-                    onDragOver={(e) => handleDragOver(e, cell.dateStr)}
-                    onDragLeave={(e) => handleDragLeave(e, cell.dateStr)}
-                    onDrop={(e) => handleDrop(e, cell.dateStr)}
-                    onDoubleClick={(e) => {
-                      // 콘텐츠 항목이 아닌 빈 영역에서만 작동
-                      if (e.target.classList.contains('cal-item')) return;
-                      setEditingItem(newItemDefaults(cell.dateStr));
-                    }}
-                    title="더블클릭하여 새 콘텐츠 추가"
-                  >
-                    <div className={`day-num ${dayClass}`}>{cell.day}</div>
-                    {cell.holiday && <div className="day-event" style={{ color: '#D4537E', fontWeight: 500 }}>{cell.holiday}</div>}
-                    {cell.anniversary && <div className="day-event">{cell.anniversary}</div>}
-                    {cell.dayItems.map(it => {
-                      const c = COLORS[it.channel] || { bg: '#F0F0EB', fg: '#1A1A1A' };
-                      const isDragging = draggingId === it.id;
+                  <div key={`w-${wIdx}`} className={`cal-grid ${isThisWeekRow ? 'this-week' : ''}`}>
+                    {week.map(cell => {
+                      if (cell.empty) return <div key={cell.key} className="cal-cell-empty" />;
+                      const dayClass = cell.dow === 0 ? 'sun' : cell.dow === 6 ? 'sat' : '';
+                      const isDragOver = dragOverDate === cell.dateStr;
                       return (
-                        <button
-                          key={it.id}
-                          className={`cal-item ${it.completed ? 'completed' : ''} ${isDragging ? 'dragging' : ''}`}
-                          style={{ background: c.bg, color: c.fg }}
-                          draggable
-                          onDragStart={(e) => handleDragStart(e, it.id)}
-                          onDragEnd={handleDragEnd}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (!isDragging) setSelectedItem(it);
+                        <div
+                          key={cell.key}
+                          className={`cal-cell ${cell.holiday ? 'holiday' : ''} ${isDragOver ? 'drag-over' : ''} ${cell.isToday ? 'today' : ''}`}
+                          onDragOver={(e) => handleDragOver(e, cell.dateStr)}
+                          onDragLeave={(e) => handleDragLeave(e, cell.dateStr)}
+                          onDrop={(e) => handleDrop(e, cell.dateStr)}
+                          onDoubleClick={(e) => {
+                            if (e.target.classList.contains('cal-item')) return;
+                            setEditingItem(newItemDefaults(cell.dateStr));
                           }}
-                          onContextMenu={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setContextMenu({ x: e.clientX, y: e.clientY, item: it });
-                          }}
+                          title={cell.isToday ? '오늘' : '더블클릭하여 새 콘텐츠 추가'}
                         >
-                          {it.isCore && '★ '}{it.title}
-                        </button>
+                          <div className={`day-num ${dayClass}`}>
+                            <span className="day-text">{cell.day}</span>
+                            {cell.isToday && <span className="today-badge">오늘</span>}
+                          </div>
+                          {cell.holiday && <div className="day-event" style={{ color: '#D4537E', fontWeight: 500 }}>{cell.holiday}</div>}
+                          {cell.anniversary && <div className="day-event">{cell.anniversary}</div>}
+                          {cell.dayItems.map(it => {
+                            const c = COLORS[it.channel] || { bg: '#F0F0EB', fg: '#1A1A1A' };
+                            const isDragging = draggingId === it.id;
+                            return (
+                              <button
+                                key={it.id}
+                                className={`cal-item ${it.completed ? 'completed' : ''} ${isDragging ? 'dragging' : ''}`}
+                                style={{ background: c.bg, color: c.fg, borderLeftColor: c.fg }}
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, it.id)}
+                                onDragEnd={handleDragEnd}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (!isDragging) setSelectedItem(it);
+                                }}
+                                onContextMenu={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setContextMenu({ x: e.clientX, y: e.clientY, item: it });
+                                }}
+                              >
+                                {it.isCore && '★ '}{it.title}
+                              </button>
+                            );
+                          })}
+                        </div>
                       );
                     })}
                   </div>
                 );
-              })}
-            </div>
+              });
+            })()}
           </>
         )}
 
@@ -1351,7 +1396,7 @@ function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, o
         const isToday = dateStr === todayStr;
 
         return (
-          <div key={dateStr} className={`list-day ${isExpanded ? 'expanded' : ''}`}>
+          <div key={dateStr} className={`list-day ${isExpanded ? 'expanded' : ''} ${isToday ? 'today' : ''}`}>
             <button
               className="list-day-header-btn"
               onClick={() => toggleDate(dateStr)}
@@ -1360,7 +1405,7 @@ function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, o
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
                 <span className={`list-arrow ${isExpanded ? 'expanded' : ''}`}>›</span>
                 <div className="list-day-date">
-                  {isToday && <span className="today-dot" />}
+                  {isToday && <span className="today-badge" style={{ marginRight: 6 }}>오늘</span>}
                   {monthNum}월 {day}일
                   <span className={`dow ${dowClass}`}>({dowLabel})</span>
                 </div>
@@ -1503,18 +1548,20 @@ function WeekView({ weekStart, setWeekStart, items, holidays, anniversaries, onI
             const anniversary = anniversaries[wd.dateStr];
             const dowColor = wd.dow === 0 ? '#D4537E' : wd.dow === 6 ? '#5C7AA8' : '#1A1A1A';
             const isDragOver = dragOverDate === wd.dateStr;
+            const isToday = wd.dateStr === todayStr;
             return (
               <div key={wd.dateStr}
-                className={`week-cell ${holiday ? 'holiday' : ''} ${isDragOver ? 'drag-over' : ''}`}
+                className={`week-cell ${holiday ? 'holiday' : ''} ${isDragOver ? 'drag-over' : ''} ${isToday ? 'today' : ''}`}
                 onDragOver={(e) => handleDragOver(e, wd.dateStr)}
                 onDragLeave={(e) => handleDragLeave(e, wd.dateStr)}
                 onDrop={(e) => handleDrop(e, wd.dateStr)}
               >
                 <div className="week-cell-header">
-                  <div className="week-cell-day" style={{ color: dowColor }}>{wd.day}</div>
+                  <div className="week-cell-day" style={isToday ? {} : { color: dowColor }}>{wd.day}</div>
                   <div className="week-cell-dow">{dayLabelsLocal[wd.dow]}</div>
-                  {holiday && <div style={{ fontSize: 10, color: '#D4537E', marginTop: 2 }}>{holiday}</div>}
-                  {anniversary && <div style={{ fontSize: 10, color: '#888780', marginTop: 2 }}>{anniversary}</div>}
+                  {isToday && <span className="today-badge">오늘</span>}
+                  {holiday && <div style={{ fontSize: 11, color: '#D4537E', marginTop: 2, fontWeight: 500, width: '100%' }}>{holiday}</div>}
+                  {anniversary && <div style={{ fontSize: 11, color: '#888780', marginTop: 2, width: '100%' }}>{anniversary}</div>}
                 </div>
                 <div className="week-cell-items">
                   {dayItems.map(it => {
