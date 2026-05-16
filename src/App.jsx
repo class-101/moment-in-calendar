@@ -157,8 +157,15 @@ export default function App({ session }) {
       const yearNum = parseInt(yearStr, 10);
       const monthNum = parseInt(monthStr, 10);
       const lastDay = new Date(yearNum, monthNum, 0).getDate();
-      const startDate = `${yearStr}-${monthStr}-01`;
-      const endDate = `${yearStr}-${monthStr}-${String(lastDay).padStart(2, '0')}`;
+
+      // 그리드 표시 범위 = 이전달 마지막주 일요일 ~ 다음달 첫주 토요일 (최대 6주)
+      const firstDow = new Date(yearNum, monthNum - 1, 1).getDay(); // 1일의 요일
+      const gridStart = new Date(yearNum, monthNum - 1, 1 - firstDow);
+      const gridEnd = new Date(gridStart);
+      gridEnd.setDate(gridStart.getDate() + 41); // 6주 = 42일
+      const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const startDate = fmt(gridStart);
+      const endDate = fmt(gridEnd);
 
       const { data: itemsData, error: itemsErr } = await supabase
         .from('items').select('*')
@@ -424,7 +431,7 @@ export default function App({ session }) {
   const filteredItems = applyFilters(items);
   const isFiltered = searchQuery || filterChannels.size > 0 || filterCompleted !== 'all' || filterCore;
 
-  // 캘린더 그리드
+  // 캘린더 그리드 (6주 = 42일, 이전달·다음달 일부 포함)
   const [yearStr, monthStr] = currentMonth.split('-');
   const yearNum = parseInt(yearStr, 10);
   const monthNum = parseInt(monthStr, 10);
@@ -442,17 +449,39 @@ export default function App({ session }) {
   _thisWeekEnd.setDate(_thisWeekStart.getDate() + 6);
   _thisWeekEnd.setHours(23, 59, 59, 999);
 
+  // 6주 그리드 시작점 = 이번달 1일이 속한 주의 일요일
+  const _gridStart = new Date(yearNum, monthNum - 1, 1 - startDay);
+  const _fmtDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
   const cells = [];
-  for (let i = 0; i < startDay; i++) cells.push({ empty: true, key: `empty-${i}` });
-  for (let d = 1; d <= lastDay; d++) {
-    const dateStr = `${yearStr}-${monthStr}-${String(d).padStart(2, '0')}`;
-    const dt = new Date(yearNum, monthNum - 1, d);
+  for (let i = 0; i < 42; i++) {
+    const dt = new Date(_gridStart);
+    dt.setDate(_gridStart.getDate() + i);
+    const dateStr = _fmtDate(dt);
     const dow = dt.getDay();
     const dayItems = filteredItems.filter(it => it.date === dateStr);
     const isToday = dateStr === _todayStr;
     const isThisWeek = dt >= _thisWeekStart && dt <= _thisWeekEnd;
-    cells.push({ empty: false, key: dateStr, day: d, dow, dateStr, dayItems, holiday: HOLIDAYS[dateStr], anniversary: ANNIVERSARIES[dateStr], isToday, isThisWeek });
+    const isCurrentMonth = dt.getFullYear() === yearNum && (dt.getMonth() + 1) === monthNum;
+    cells.push({
+      empty: false,
+      key: dateStr,
+      day: dt.getDate(),
+      dow,
+      dateStr,
+      dayItems,
+      holiday: HOLIDAYS[dateStr],
+      anniversary: ANNIVERSARIES[dateStr],
+      isToday,
+      isThisWeek,
+      isCurrentMonth
+    });
   }
+
+  // 마지막 주가 전부 다음달이면 그 주는 자르기 (5주짜리 월 대응)
+  const lastWeekStart = 35;
+  const lastWeekAllOtherMonth = cells.slice(lastWeekStart, 42).every(c => !c.isCurrentMonth);
+  if (lastWeekAllOtherMonth) cells.length = lastWeekStart;
 
   const toggleChannelFilter = (channel) => {
     setFilterChannels(prev => {
@@ -504,6 +533,14 @@ export default function App({ session }) {
         .cal-cell.drag-over { background: #F0EDE0; box-shadow: inset 0 0 0 2px #1A1A1A; }
         .cal-cell.today { background: #FFF8E7; box-shadow: 0 0 0 2px #1A1A1A, 0 2px 8px rgba(0,0,0,0.06); position: relative; z-index: 1; }
         .cal-cell.today.holiday { background: #FFF0E0; }
+        .cal-cell.other-month { background: #F8F7F2; }
+        .cal-cell.other-month .day-num { color: #BFBDB5; }
+        .cal-cell.other-month .day-num.sun { color: #E8B5C8; }
+        .cal-cell.other-month .day-num.sat { color: #B5C5DD; }
+        .cal-cell.other-month .day-event { color: #BFBDB5; }
+        .cal-cell.other-month .cal-item { opacity: 0.55; }
+        .cal-cell.other-month.holiday { background: #FAEEE6; }
+        .cal-cell.other-month.drag-over { background: #EDE9DC; }
         .cal-cell .day-num { font-size: 15px; font-weight: 500; display: flex; align-items: center; gap: 5px; line-height: 1.1; }
         .cal-cell .day-num.sun { color: #D4537E; }
         .cal-cell .day-num.sat { color: #5C7AA8; }
@@ -817,7 +854,7 @@ export default function App({ session }) {
                       return (
                         <div
                           key={cell.key}
-                          className={`cal-cell ${cell.holiday ? 'holiday' : ''} ${isDragOver ? 'drag-over' : ''} ${cell.isToday ? 'today' : ''}`}
+                          className={`cal-cell ${cell.holiday ? 'holiday' : ''} ${isDragOver ? 'drag-over' : ''} ${cell.isToday ? 'today' : ''} ${!cell.isCurrentMonth ? 'other-month' : ''}`}
                           onDragOver={(e) => handleDragOver(e, cell.dateStr)}
                           onDragLeave={(e) => handleDragLeave(e, cell.dateStr)}
                           onDrop={(e) => handleDrop(e, cell.dateStr)}
@@ -825,7 +862,7 @@ export default function App({ session }) {
                             if (e.target.classList.contains('cal-item')) return;
                             setEditingItem(newItemDefaults(cell.dateStr));
                           }}
-                          title={cell.isToday ? '오늘' : '더블클릭하여 새 콘텐츠 추가'}
+                          title={cell.isToday ? '오늘' : (!cell.isCurrentMonth ? `${cell.dateStr} (다른 달 — 더블클릭으로 콘텐츠 추가, 드래그로 이동 가능)` : '더블클릭하여 새 콘텐츠 추가')}
                         >
                           <div className={`day-num ${dayClass}`}>
                             <span className="day-text">{cell.day}</span>
