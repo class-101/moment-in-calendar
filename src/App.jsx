@@ -116,7 +116,10 @@ export default function App({ session }) {
   const [archiveItems, setArchiveItems] = useState([]);
   const [archiveLoading, setArchiveLoading] = useState(false);
   // 보관 사유 입력 시트
-  const [archiveSheet, setArchiveSheet] = useState(null); // { itemId, title } | null
+  const [archiveSheet, setArchiveSheet] = useState(null); // { itemId, title } | { multi:true, ids, count } | null
+  // 다중 선택 모드
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
 
   // 뷰 모드: 'month' | 'week' | 'list' | 'kpi'
   const [viewMode, setViewMode] = useState(() => {
@@ -273,6 +276,40 @@ export default function App({ session }) {
     } catch (err) {
       alert('보관 실패: ' + (err.message || err));
     }
+  };
+
+  // 다중 선택 일괄 보관
+  const moveMultipleToArchive = async (ids, reason = '') => {
+    if (!ids || ids.length === 0) return;
+    try {
+      const { error } = await supabase.from('items').update({
+        archived: true,
+        archived_at: new Date().toISOString(),
+        archive_reason: reason || null
+      }).in('id', ids);
+      if (error) throw error;
+      const idSet = new Set(ids);
+      setItems(prev => prev.filter(i => !idSet.has(i.id)));
+    } catch (err) {
+      alert('일괄 보관 실패: ' + (err.message || err));
+    }
+  };
+
+  // 선택 토글 / 모드 종료 / 전체 선택
+  const toggleSelect = (itemId) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  };
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  };
+  const selectAllVisible = () => {
+    setSelectedIds(new Set(filteredItems.map(i => i.id)));
   };
 
   const restoreFromArchive = async (itemId) => {
@@ -559,6 +596,7 @@ export default function App({ session }) {
         .cal-item:active { cursor: grabbing; }
         .cal-item.completed { opacity: 0.5; text-decoration: line-through; }
         .cal-item.dragging { opacity: 0.3; transform: scale(0.95); }
+        .cal-item.select-mode { cursor: pointer; }
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 1000; }
         .modal-content { background: #FFFFFF; border-radius: 12px; padding: 22px; max-width: 480px; width: 100%; max-height: 90vh; overflow: auto; }
         .header-row { display: flex; flex-direction: column; gap: 8px; margin-bottom: 1rem; }
@@ -626,12 +664,14 @@ export default function App({ session }) {
         .list-items { padding: 4px 0 8px; }
         .list-item { display: flex; gap: 10px; padding: 10px 16px; cursor: pointer; align-items: center; transition: background 0.1s; border: none; background: transparent; width: 100%; text-align: left; font-family: inherit; }
         .list-item:hover { background: #F8F8F6; }
+        .list-item.selected { background: #F0EDE0; }
         .list-item-dot { width: 4px; align-self: stretch; min-height: 32px; border-radius: 2px; flex-shrink: 0; }
         .list-item-content { flex: 1; min-width: 0; }
         .list-item-title { font-size: 14px; color: #1A1A1A; font-weight: 500; line-height: 1.4; word-break: keep-all; }
         .list-item-title.completed { opacity: 0.5; text-decoration: line-through; }
         .list-item-meta { font-size: 11px; color: #888780; margin-top: 3px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         .list-empty { padding: 40px 20px; text-align: center; color: #888780; font-size: 13px; }
+        .list-select-check { font-size: 16px; flex-shrink: 0; color: #1A1A1A; }
 
         .week-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
         .week-grid { display: grid; grid-template-columns: repeat(7, minmax(120px, 1fr)); gap: 4px; width: 100%; min-width: 700px; }
@@ -646,6 +686,8 @@ export default function App({ session }) {
         .week-cell-items { display: flex; flex-direction: column; gap: 4px; flex: 1; }
         .week-item { padding: 7px 9px; border-radius: 6px; font-size: 12px; cursor: grab; border: none; text-align: left; font-family: inherit; line-height: 1.35; word-break: keep-all; font-weight: 500; }
         .week-item.completed { opacity: 0.5; text-decoration: line-through; }
+
+        .bulk-bar { position: fixed; left: 0; right: 0; bottom: 0; background: #1A1A1A; color: #FFFFFF; padding: 14px 20px; display: flex; align-items: center; gap: 12px; z-index: 1500; box-shadow: 0 -4px 16px rgba(0,0,0,0.15); }
 
         @media (max-width: 640px) {
           .cal-cell { min-height: 90px; max-height: 140px; padding: 5px 4px; }
@@ -680,6 +722,7 @@ export default function App({ session }) {
           .list-item { padding: 10px 14px; gap: 8px; }
           .list-item-title { font-size: 13px; }
           .kpi-cards { grid-template-columns: repeat(2, 1fr); }
+          .bulk-bar { padding: 12px 14px; gap: 8px; flex-wrap: wrap; }
         }
         @media (max-width: 380px) {
           .cal-cell { min-height: 80px; max-height: 120px; padding: 4px 3px; }
@@ -693,7 +736,7 @@ export default function App({ session }) {
         }
       `}</style>
 
-      <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+      <div style={{ maxWidth: 1100, margin: '0 auto', paddingBottom: selectMode ? 80 : 0 }}>
         <div className="header-row">
           <div className="header-top">
             <div className="header-nav">
@@ -707,12 +750,20 @@ export default function App({ session }) {
             </div>
             <div className="header-actions">
               <button onClick={() => setEditingItem(newItemDefaults())} style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', borderRadius: 8, padding: '8px 12px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, whiteSpace: 'nowrap' }}>+ 새 콘텐츠</button>
+              <button onClick={() => { if (selectMode) exitSelectMode(); else setSelectMode(true); }} style={{ background: selectMode ? '#1A1A1A' : 'transparent', color: selectMode ? '#FFFFFF' : '#5F5E5A', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', cursor: 'pointer', whiteSpace: 'nowrap' }} title="여러 개 선택">{selectMode ? '✕ 선택 해제' : '✓ 선택'}</button>
               <button onClick={openArchive} style={{ background: 'transparent', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer', whiteSpace: 'nowrap' }} title="보관함">📦 보관함</button>
               <span className="user-email">{userEmail}</span>
               <button onClick={handleSignOut} style={{ background: 'transparent', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer', whiteSpace: 'nowrap' }}>로그아웃</button>
             </div>
           </div>
         </div>
+
+        {/* 선택 모드 안내 */}
+        {selectMode && (
+          <div style={{ background: '#FAF5E8', border: '0.5px solid #E5DCC4', borderRadius: 10, padding: '10px 14px', marginBottom: 12, fontSize: 13, color: '#5F5E5A' }}>
+            선택 모드입니다. 콘텐츠를 클릭(탭)하면 선택/해제되고, 하단 바에서 한 번에 보관할 수 있어요. <span style={{ color: '#888780' }}>(드래그 이동은 일시 중지)</span>
+          </div>
+        )}
 
         {/* 뷰 토글 + 검색·필터 */}
         <div className="control-bar">
@@ -859,6 +910,7 @@ export default function App({ session }) {
                           onDragLeave={(e) => handleDragLeave(e, cell.dateStr)}
                           onDrop={(e) => handleDrop(e, cell.dateStr)}
                           onDoubleClick={(e) => {
+                            if (selectMode) return;
                             if (e.target.classList.contains('cal-item')) return;
                             setEditingItem(newItemDefaults(cell.dateStr));
                           }}
@@ -873,25 +925,28 @@ export default function App({ session }) {
                           {cell.dayItems.map(it => {
                             const c = COLORS[it.channel] || { bg: '#F0F0EB', fg: '#1A1A1A' };
                             const isDragging = draggingId === it.id;
+                            const isSelected = selectMode && selectedIds.has(it.id);
                             return (
                               <button
                                 key={it.id}
-                                className={`cal-item ${it.completed ? 'completed' : ''} ${isDragging ? 'dragging' : ''}`}
-                                style={{ background: c.bg, color: c.fg, borderLeftColor: c.fg }}
-                                draggable
+                                className={`cal-item ${it.completed ? 'completed' : ''} ${isDragging ? 'dragging' : ''} ${selectMode ? 'select-mode' : ''}`}
+                                style={{ background: c.bg, color: c.fg, borderLeftColor: c.fg, boxShadow: isSelected ? 'inset 0 0 0 2px #1A1A1A' : 'none' }}
+                                draggable={!selectMode}
                                 onDragStart={(e) => handleDragStart(e, it.id)}
                                 onDragEnd={handleDragEnd}
                                 onClick={(e) => {
                                   e.stopPropagation();
+                                  if (selectMode) { toggleSelect(it.id); return; }
                                   if (!isDragging) setSelectedItem(it);
                                 }}
                                 onContextMenu={(e) => {
+                                  if (selectMode) return;
                                   e.preventDefault();
                                   e.stopPropagation();
                                   setContextMenu({ x: e.clientX, y: e.clientY, item: it });
                                 }}
                               >
-                                {it.isCore && '★ '}{it.title}
+                                {selectMode && (isSelected ? '☑ ' : '☐ ')}{it.isCore && '★ '}{it.title}
                               </button>
                             );
                           })}
@@ -926,6 +981,9 @@ export default function App({ session }) {
             handleDragLeave={handleDragLeave}
             handleDrop={handleDrop}
             isMobile={isMobile}
+            selectMode={selectMode}
+            selectedIds={selectedIds}
+            toggleSelect={toggleSelect}
           />
         )}
 
@@ -942,6 +1000,9 @@ export default function App({ session }) {
               setContextMenu({ x: e.clientX, y: e.clientY, item: it });
             }}
             onAddClick={(dateStr) => setEditingItem(newItemDefaults(dateStr))}
+            selectMode={selectMode}
+            selectedIds={selectedIds}
+            toggleSelect={toggleSelect}
           />
         )}
 
@@ -1002,12 +1063,37 @@ export default function App({ session }) {
           />
         )}
 
+        {/* 다중 선택 하단 바 */}
+        {selectMode && (
+          <div className="bulk-bar">
+            <span style={{ fontSize: 14, fontWeight: 600 }}>{selectedIds.size}개 선택됨</span>
+            <button onClick={selectAllVisible} style={{ background: 'transparent', border: '0.5px solid rgba(255,255,255,0.4)', color: '#FFFFFF', borderRadius: 8, padding: '7px 12px', fontSize: 12, fontFamily: 'inherit', cursor: 'pointer', whiteSpace: 'nowrap' }}>전체 선택</button>
+            {selectedIds.size > 0 && (
+              <button onClick={() => setSelectedIds(new Set())} style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.7)', fontSize: 12, fontFamily: 'inherit', cursor: 'pointer', whiteSpace: 'nowrap' }}>선택 비우기</button>
+            )}
+            <div style={{ flex: 1 }} />
+            <button
+              onClick={() => {
+                if (selectedIds.size === 0) { alert('선택된 콘텐츠가 없습니다.'); return; }
+                setArchiveSheet({ multi: true, ids: Array.from(selectedIds), count: selectedIds.size });
+              }}
+              style={{ background: '#FFFFFF', color: '#1A1A1A', border: 'none', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontFamily: 'inherit', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+            >📦 보관함으로 ({selectedIds.size})</button>
+            <button onClick={exitSelectMode} style={{ background: 'transparent', border: 'none', color: '#FFFFFF', fontSize: 20, cursor: 'pointer', padding: '0 4px', lineHeight: 1 }}>×</button>
+          </div>
+        )}
+
         {archiveSheet && (
           <ArchiveSheet
-            itemTitle={archiveSheet.title}
+            itemTitle={archiveSheet.multi ? `선택한 ${archiveSheet.count}개 콘텐츠` : archiveSheet.title}
             onCancel={() => setArchiveSheet(null)}
             onConfirm={async (reason) => {
-              await moveToArchive(archiveSheet.itemId, reason);
+              if (archiveSheet.multi) {
+                await moveMultipleToArchive(archiveSheet.ids, reason);
+                exitSelectMode();
+              } else {
+                await moveToArchive(archiveSheet.itemId, reason);
+              }
               setArchiveSheet(null);
             }}
           />
@@ -1350,7 +1436,7 @@ function DeleteSheet({ itemTitle, onCancel, onConfirm }) {
 // ============================================================
 // 리스트뷰
 // ============================================================
-function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, onItemContextMenu, onAddClick }) {
+function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, onItemContextMenu, onAddClick, selectMode, selectedIds, toggleSelect }) {
   const dayLabelsLocal = ['일', '월', '화', '수', '목', '금', '토'];
   const [yearStr, monthStr] = currentMonth.split('-');
   const yearNum = parseInt(yearStr, 10);
@@ -1459,7 +1545,7 @@ function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, o
                     {dayCompletedCount > 0 && <span style={{ color: '#3A7D3A', marginLeft: 4 }}>· {dayCompletedCount}</span>}
                   </span>
                 )}
-                {onAddClick && (
+                {onAddClick && !selectMode && (
                   <span
                     role="button"
                     tabIndex={0}
@@ -1475,13 +1561,20 @@ function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, o
               <div className="list-items">
                 {dayItems.map(it => {
                   const c = COLORS[it.channel] || { bg: '#F0F0EB', fg: '#1A1A1A' };
+                  const isSelected = selectMode && selectedIds && selectedIds.has(it.id);
                   return (
                     <button
                       key={it.id}
-                      className="list-item"
-                      onClick={() => onItemClick(it)}
-                      onContextMenu={(e) => onItemContextMenu && onItemContextMenu(e, it)}
+                      className={`list-item ${isSelected ? 'selected' : ''}`}
+                      onClick={() => {
+                        if (selectMode) { toggleSelect(it.id); return; }
+                        onItemClick(it);
+                      }}
+                      onContextMenu={(e) => { if (selectMode) return; onItemContextMenu && onItemContextMenu(e, it); }}
                     >
+                      {selectMode && (
+                        <span className="list-select-check">{isSelected ? '☑' : '☐'}</span>
+                      )}
                       <div className="list-item-dot" style={{ background: c.bg }} />
                       <div className="list-item-content">
                         <div className={`list-item-title ${it.completed ? 'completed' : ''}`}>
@@ -1506,7 +1599,7 @@ function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, o
   );
 }
 
-function WeekView({ weekStart, setWeekStart, items, holidays, anniversaries, onItemClick, onItemContextMenu, draggingId, dragOverDate, handleDragStart, handleDragEnd, handleDragOver, handleDragLeave, handleDrop, isMobile }) {
+function WeekView({ weekStart, setWeekStart, items, holidays, anniversaries, onItemClick, onItemContextMenu, draggingId, dragOverDate, handleDragStart, handleDragEnd, handleDragOver, handleDragLeave, handleDrop, isMobile, selectMode, selectedIds, toggleSelect }) {
   const dayLabelsLocal = ['일', '월', '화', '수', '목', '금', '토'];
 
   const weekDates = [];
@@ -1525,7 +1618,13 @@ function WeekView({ weekStart, setWeekStart, items, holidays, anniversaries, onI
   const endStr = `${weekDates[6].date.getMonth() + 1}.${weekDates[6].day}`;
 
   const today = new Date();
-  const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+  const handleItemClick = (e, it, isDragging) => {
+    e.stopPropagation();
+    if (selectMode) { toggleSelect(it.id); return; }
+    if (!isDragging) onItemClick(it);
+  };
 
   return (
     <>
@@ -1558,11 +1657,13 @@ function WeekView({ weekStart, setWeekStart, items, holidays, anniversaries, onI
                   <div style={{ padding: '6px 0' }}>
                     {dayItems.map(it => {
                       const c = COLORS[it.channel] || { bg: '#F0F0EB', fg: '#1A1A1A' };
+                      const isSelected = selectMode && selectedIds && selectedIds.has(it.id);
                       return (
                         <button key={it.id}
-                          onClick={() => onItemClick(it)}
-                          onContextMenu={(e) => onItemContextMenu && onItemContextMenu(e, it)}
-                          style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 14px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+                          onClick={(e) => handleItemClick(e, it, false)}
+                          onContextMenu={(e) => { if (selectMode) return; onItemContextMenu && onItemContextMenu(e, it); }}
+                          style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 14px', background: isSelected ? '#F0EDE0' : 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+                          {selectMode && <span style={{ fontSize: 15 }}>{isSelected ? '☑' : '☐'}</span>}
                           <span style={{ width: 4, height: 4, borderRadius: '50%', background: c.fg, flexShrink: 0 }} />
                           <span style={{ fontSize: 13, color: it.completed ? '#aaa' : '#1A1A1A', textDecoration: it.completed ? 'line-through' : 'none', flex: 1 }}>
                             {it.isCore && '★ '}{it.title}
@@ -1604,16 +1705,17 @@ function WeekView({ weekStart, setWeekStart, items, holidays, anniversaries, onI
                   {dayItems.map(it => {
                     const c = COLORS[it.channel] || { bg: '#F0F0EB', fg: '#1A1A1A' };
                     const isDragging = draggingId === it.id;
+                    const isSelected = selectMode && selectedIds && selectedIds.has(it.id);
                     return (
                       <button key={it.id}
                         className={`week-item ${it.completed ? 'completed' : ''}`}
-                        style={{ background: c.bg, color: c.fg, opacity: isDragging ? 0.3 : 1 }}
-                        draggable
+                        style={{ background: c.bg, color: c.fg, opacity: isDragging ? 0.3 : 1, boxShadow: isSelected ? 'inset 0 0 0 2px #1A1A1A' : 'none' }}
+                        draggable={!selectMode}
                         onDragStart={(e) => handleDragStart(e, it.id)}
                         onDragEnd={handleDragEnd}
-                        onClick={(e) => { e.stopPropagation(); if (!isDragging) onItemClick(it); }}
-                        onContextMenu={(e) => onItemContextMenu && onItemContextMenu(e, it)}
-                      >{it.isCore && '★ '}{it.title}</button>
+                        onClick={(e) => handleItemClick(e, it, isDragging)}
+                        onContextMenu={(e) => { if (selectMode) return; onItemContextMenu && onItemContextMenu(e, it); }}
+                      >{selectMode && (isSelected ? '☑ ' : '☐ ')}{it.isCore && '★ '}{it.title}</button>
                     );
                   })}
                 </div>
