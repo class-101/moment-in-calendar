@@ -2,27 +2,57 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from './supabaseClient';
 
 // ============================================================
-// 채널 색상
+// 채널 색상 / 채널 목록
+// ----------------------------------------------------------
+// 채널은 Supabase `channels` 테이블에서 불러와 채워진다.
+// 아래 DEFAULT_CHANNELS는 DB 로드 전(초기 렌더)·로드 실패 시 사용하는 기본값.
+// COLORS / CHANNEL_OPTIONS 는 applyChannelData()로 다시 채워지는 가변 변수다.
+// 자식 컴포넌트들이 이 모듈 변수를 그대로 참조하므로, 채널이 바뀌면
+// applyChannelData() 후 App 상태를 갱신해 전체를 다시 렌더하면 반영된다.
 // ============================================================
-const COLORS = {
-  'moment-insta-star': { bg: '#FAEBE6', fg: '#8B4438' },
-  'moment-insta-daily': { bg: '#F5EDE0', fg: '#8B6F38' },
-  'moment-blog': { bg: '#E8E4DA', fg: '#5C5444' },
-  'moment-todayhouse': { bg: '#E6F0E8', fg: '#3A6B45' },
-  'moment-pin': { bg: '#F5E8EE', fg: '#8B3A5C' },
-  'ohana-blog': { bg: '#E8E8F0', fg: '#4A4A6E' },
-  'ohana-insta': { bg: '#F0E8E0', fg: '#6E5638' }
-};
-
-const CHANNEL_OPTIONS = [
-  { value: 'moment-insta-star', label: 'moment.in 인스타 (시리즈)', shortLabel: '인스타', skill: 'momentin-insta-writer' },
-  { value: 'moment-insta-daily', label: 'moment.in 인스타 (데일리)', shortLabel: '인스타', skill: 'momentin-insta-writer' },
-  { value: 'moment-blog', label: 'moment_in 블로그', shortLabel: '블로그', skill: 'momentin-blog-writer' },
-  { value: 'moment-todayhouse', label: 'moment.in 오늘의집', shortLabel: '오늘의집', skill: 'momentin-todayhouse-writer' },
-  { value: 'moment-pin', label: 'moment.in 핀터레스트', shortLabel: '핀터레스트', skill: 'momentin-pinterest-writer' },
-  { value: 'ohana-blog', label: 'ohana_story 블로그', shortLabel: 'ohana 블로그', skill: 'ohana-blog-writer' },
-  { value: 'ohana-insta', label: 'ohana.yyy 인스타', shortLabel: 'ohana 인스타', skill: 'ohana-insta-writer' }
+const DEFAULT_CHANNELS = [
+  { value: 'moment-insta-star', label: 'moment.in 인스타 (시리즈)', shortLabel: '인스타', skill: 'momentin-insta-writer', bg: '#FAEBE6', fg: '#8B4438' },
+  { value: 'moment-insta-daily', label: 'moment.in 인스타 (데일리)', shortLabel: '인스타', skill: 'momentin-insta-writer', bg: '#F5EDE0', fg: '#8B6F38' },
+  { value: 'moment-blog', label: 'moment_in 블로그', shortLabel: '블로그', skill: 'momentin-blog-writer', bg: '#E8E4DA', fg: '#5C5444' },
+  { value: 'moment-todayhouse', label: 'moment.in 오늘의집', shortLabel: '오늘의집', skill: 'momentin-todayhouse-writer', bg: '#E6F0E8', fg: '#3A6B45' },
+  { value: 'moment-pin', label: 'moment.in 핀터레스트', shortLabel: '핀터레스트', skill: 'momentin-pinterest-writer', bg: '#F5E8EE', fg: '#8B3A5C' },
+  { value: 'ohana-blog', label: 'ohana_story 블로그', shortLabel: 'ohana 블로그', skill: 'ohana-blog-writer', bg: '#E8E8F0', fg: '#4A4A6E' },
+  { value: 'ohana-insta', label: 'ohana.yyy 인스타', shortLabel: 'ohana 인스타', skill: 'ohana-insta-writer', bg: '#F0E8E0', fg: '#6E5638' }
 ];
+
+// 신규 채널에 돌려쓸 추천 색상 팔레트 (bg = 연한 배경, fg = 글자/포인트)
+const CHANNEL_COLOR_PRESETS = [
+  { bg: '#FAEBE6', fg: '#8B4438' },
+  { bg: '#F5EDE0', fg: '#8B6F38' },
+  { bg: '#E8E4DA', fg: '#5C5444' },
+  { bg: '#E6F0E8', fg: '#3A6B45' },
+  { bg: '#F5E8EE', fg: '#8B3A5C' },
+  { bg: '#E8E8F0', fg: '#4A4A6E' },
+  { bg: '#F0E8E0', fg: '#6E5638' },
+  { bg: '#E3EEF2', fg: '#356070' },
+  { bg: '#F2ECE0', fg: '#7A6024' },
+  { bg: '#ECE8F2', fg: '#574A78' }
+];
+
+let COLORS = Object.fromEntries(DEFAULT_CHANNELS.map(c => [c.value, { bg: c.bg, fg: c.fg }]));
+let CHANNEL_OPTIONS = DEFAULT_CHANNELS.map(c => ({ value: c.value, label: c.label, shortLabel: c.shortLabel, skill: c.skill }));
+
+const dbToChannel = (row) => ({
+  value: row.value,
+  label: row.label,
+  shortLabel: row.short_label || row.label,
+  skill: row.skill || '',
+  bg: row.bg || '#F0F0EB',
+  fg: row.fg || '#1A1A1A',
+  sortOrder: row.sort_order ?? 0
+});
+
+// DB(또는 기본값) 채널 배열로 모듈 전역 COLORS / CHANNEL_OPTIONS 를 다시 채운다
+const applyChannelData = (channels) => {
+  if (!channels || channels.length === 0) return;
+  COLORS = Object.fromEntries(channels.map(c => [c.value, { bg: c.bg || '#F0F0EB', fg: c.fg || '#1A1A1A' }]));
+  CHANNEL_OPTIONS = channels.map(c => ({ value: c.value, label: c.label, shortLabel: c.shortLabel || c.label, skill: c.skill || '' }));
+};
 
 const STRENGTH_OPTIONS = ['', '⭐⭐⭐ 강력', '⭐⭐⭐ 진성 블루오션', '⭐⭐ 진성 블루오션', '⭐⭐ 보통', '⭐ 블루오션', '🟢 안정', '🟡 일반', '🔴 고경쟁', '시리즈 핵심', '캐러셀 보조', '릴스', '데일리', '오늘의집', '핀 보드', '일상'];
 
@@ -101,6 +131,10 @@ export default function App({ session }) {
   const [performance, setPerformance] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // 채널 목록 (Supabase channels 테이블)
+  const [channels, setChannels] = useState(DEFAULT_CHANNELS);
+  const [channelMgrOpen, setChannelMgrOpen] = useState(false);
 
   const [selectedItem, setSelectedItem] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
@@ -207,6 +241,92 @@ export default function App({ session }) {
   }, [currentMonth]);
 
   useEffect(() => { loadMonthData(); }, [loadMonthData]);
+
+  // ============================================
+  // 채널 (Channels)
+  // ============================================
+  const loadChannels = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('channels').select('*')
+        .order('sort_order', { ascending: true });
+      if (error) throw error;
+      if (data && data.length > 0) {
+        const list = data.map(dbToChannel);
+        applyChannelData(list); // 모듈 전역 COLORS / CHANNEL_OPTIONS 갱신
+        setChannels(list);      // 리렌더 트리거
+      }
+    } catch (err) {
+      console.error('채널 로드 실패:', err);
+    }
+  }, []);
+
+  useEffect(() => { loadChannels(); }, [loadChannels]);
+
+  // 채널 추가
+  const addChannel = async (ch) => {
+    try {
+      const value = ch.value || `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const maxOrder = channels.reduce((m, c) => Math.max(m, c.sortOrder || 0), 0);
+      const { error } = await supabase.from('channels').insert({
+        value,
+        label: ch.label,
+        short_label: ch.shortLabel || ch.label,
+        skill: ch.skill || null,
+        bg: ch.bg || '#F0F0EB',
+        fg: ch.fg || '#1A1A1A',
+        sort_order: maxOrder + 1
+      });
+      if (error) throw error;
+      await loadChannels();
+    } catch (err) {
+      alert('채널 추가 실패: ' + (err.message || err));
+    }
+  };
+
+  // 채널 수정 (이름·색상·스킬 등)
+  const updateChannel = async (value, patch) => {
+    try {
+      const dbPatch = {};
+      if (patch.label !== undefined) dbPatch.label = patch.label;
+      if (patch.shortLabel !== undefined) dbPatch.short_label = patch.shortLabel || patch.label;
+      if (patch.skill !== undefined) dbPatch.skill = patch.skill || null;
+      if (patch.bg !== undefined) dbPatch.bg = patch.bg;
+      if (patch.fg !== undefined) dbPatch.fg = patch.fg;
+      const { error } = await supabase.from('channels').update(dbPatch).eq('value', value);
+      if (error) throw error;
+      // 이름이 바뀌면 기존 콘텐츠의 채널 이름 스냅샷도 함께 갱신 (표시 일관성)
+      if (patch.label !== undefined) {
+        await supabase.from('items').update({ channel_name: patch.label }).eq('channel', value);
+      }
+      await loadChannels();
+      await loadMonthData();
+    } catch (err) {
+      alert('채널 수정 실패: ' + (err.message || err));
+    }
+  };
+
+  // 채널 삭제 — 해당 채널을 쓰는 콘텐츠가 있으면 개수 안내 후 진행
+  const deleteChannel = async (value) => {
+    try {
+      if (channels.length <= 1) { alert('채널은 최소 1개는 있어야 해요.'); return; }
+      const { count, error: cntErr } = await supabase
+        .from('items').select('id', { count: 'exact', head: true }).eq('channel', value);
+      if (cntErr) throw cntErr;
+      const ch = channels.find(c => c.value === value);
+      const name = ch ? ch.label : value;
+      const msg = count > 0
+        ? `'${name}' 채널을 삭제할까요?\n\n이 채널을 쓰는 콘텐츠 ${count}편은 삭제되지 않지만, 채널 색상·필터에서 빠지고 기존에 저장된 채널 이름만 남아요.`
+        : `'${name}' 채널을 삭제할까요?`;
+      if (!window.confirm(msg)) return;
+      const { error } = await supabase.from('channels').delete().eq('value', value);
+      if (error) throw error;
+      await loadChannels();
+      await loadMonthData();
+    } catch (err) {
+      alert('채널 삭제 실패: ' + (err.message || err));
+    }
+  };
 
   const saveItem = async (item) => {
     try {
@@ -546,14 +666,18 @@ export default function App({ session }) {
   const goToday = () => setCurrentMonth(todayYM);
   const handleSignOut = () => supabase.auth.signOut();
 
-  const newItemDefaults = (initialDate) => ({
-    id: '', title: '',
-    date: initialDate || `${currentMonth}-01`, time: '21:00',
-    channel: 'moment-insta-daily',
-    channelName: 'moment.in 인스타 (데일리)',
-    isCore: false, mainKeyword: '', subKeywords: [], strength: '', asset: '',
-    nextSkill: 'momentin-insta-writer', description: '', completed: false
-  });
+  const newItemDefaults = (initialDate) => {
+    // 기본 채널 = 'moment-insta-daily'가 있으면 그것, 없으면 첫 채널
+    const def = channels.find(c => c.value === 'moment-insta-daily') || channels[0] || DEFAULT_CHANNELS[1];
+    return {
+      id: '', title: '',
+      date: initialDate || `${currentMonth}-01`, time: '21:00',
+      channel: def.value,
+      channelName: def.label,
+      isCore: false, mainKeyword: '', subKeywords: [], strength: '', asset: '',
+      nextSkill: def.skill || '', description: '', completed: false
+    };
+  };
 
   return (
     <div style={{ minHeight: '100vh', background: '#F1EFE8', fontFamily: "'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif", color: '#1A1A1A' }} className="app-root">
@@ -752,6 +876,7 @@ export default function App({ session }) {
               <button onClick={() => setEditingItem(newItemDefaults())} style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', borderRadius: 8, padding: '8px 12px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, whiteSpace: 'nowrap' }}>+ 새 콘텐츠</button>
               <button onClick={() => { if (selectMode) exitSelectMode(); else setSelectMode(true); }} style={{ background: selectMode ? '#1A1A1A' : 'transparent', color: selectMode ? '#FFFFFF' : '#5F5E5A', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', cursor: 'pointer', whiteSpace: 'nowrap' }} title="여러 개 선택">{selectMode ? '✕ 선택 해제' : '✓ 선택'}</button>
               <button onClick={openArchive} style={{ background: 'transparent', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer', whiteSpace: 'nowrap' }} title="보관함">📦 보관함</button>
+              <button onClick={() => setChannelMgrOpen(true)} style={{ background: 'transparent', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer', whiteSpace: 'nowrap' }} title="채널 관리">🎨 채널</button>
               <span className="user-email">{userEmail}</span>
               <button onClick={handleSignOut} style={{ background: 'transparent', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer', whiteSpace: 'nowrap' }}>로그아웃</button>
             </div>
@@ -1034,6 +1159,16 @@ export default function App({ session }) {
           <EditModal item={editingItem} onSave={saveItem} onClose={() => setEditingItem(null)} />
         )}
 
+        {channelMgrOpen && (
+          <ChannelManagerModal
+            channels={channels}
+            onClose={() => setChannelMgrOpen(false)}
+            onAdd={addChannel}
+            onUpdate={updateChannel}
+            onDelete={deleteChannel}
+          />
+        )}
+
         {deleteSheet && (
           <DeleteSheet
             itemTitle={items.find(i => i.id === deleteSheet)?.title}
@@ -1201,6 +1336,190 @@ function InfoRow({ label, value }) {
   );
 }
 
+// ============================================================
+// 채널 관리 모달 (추가 / 이름변경 / 색상변경 / 삭제)
+// ============================================================
+function ChannelRow({ ch, onUpdate, onDelete }) {
+  const [label, setLabel] = useState(ch.label);
+  const [shortLabel, setShortLabel] = useState(ch.shortLabel || '');
+  const [skill, setSkill] = useState(ch.skill || '');
+  const [color, setColor] = useState({ bg: ch.bg, fg: ch.fg });
+  const [showColors, setShowColors] = useState(false);
+
+  // 부모(DB) 값이 바뀌면 입력값 동기화
+  useEffect(() => {
+    setLabel(ch.label);
+    setShortLabel(ch.shortLabel || '');
+    setSkill(ch.skill || '');
+    setColor({ bg: ch.bg, fg: ch.fg });
+  }, [ch.value, ch.label, ch.shortLabel, ch.skill, ch.bg, ch.fg]);
+
+  const dirty = label !== ch.label || shortLabel !== (ch.shortLabel || '') ||
+    skill !== (ch.skill || '') || color.bg !== ch.bg || color.fg !== ch.fg;
+
+  const fieldStyle = {
+    width: '100%', padding: '8px 10px', border: '0.5px solid rgba(0,0,0,0.18)',
+    borderRadius: 8, fontSize: 13, fontFamily: 'inherit', background: '#FFFFFF',
+    boxSizing: 'border-box', outline: 'none', color: '#1A1A1A'
+  };
+  const miniLabel = { fontSize: 11, color: '#888780', marginBottom: 4, display: 'block' };
+
+  return (
+    <div style={{ background: '#FAF9F5', borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <button
+          type="button"
+          onClick={() => setShowColors(s => !s)}
+          title="색상 변경"
+          style={{ width: 26, height: 26, borderRadius: 7, background: color.bg, border: `2px solid ${color.fg}`, cursor: 'pointer', flexShrink: 0 }}
+        />
+        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="채널 이름" style={{ ...fieldStyle, fontWeight: 500 }} />
+        <button
+          type="button"
+          onClick={() => onDelete(ch.value)}
+          title="채널 삭제"
+          style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 16, color: '#C0392B', padding: '4px 6px', flexShrink: 0 }}
+        >🗑️</button>
+      </div>
+
+      {showColors && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {CHANNEL_COLOR_PRESETS.map((p, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => setColor(p)}
+              style={{
+                width: 28, height: 28, borderRadius: 7, background: p.bg,
+                border: color.bg === p.bg && color.fg === p.fg ? '2px solid #1A1A1A' : `2px solid ${p.fg}`,
+                cursor: 'pointer'
+              }}
+              title={`${p.bg} / ${p.fg}`}
+            />
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ flex: 1 }}>
+          <label style={miniLabel}>짧은 이름 (필터·통계용)</label>
+          <input value={shortLabel} onChange={(e) => setShortLabel(e.target.value)} placeholder={label || '예: 블로그'} style={fieldStyle} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <label style={miniLabel}>작성 스킬 (선택)</label>
+          <input value={skill} onChange={(e) => setSkill(e.target.value)} placeholder="예: momentin-blog-writer" style={fieldStyle} />
+        </div>
+      </div>
+
+      {dirty && (
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button
+            type="button"
+            onClick={() => { setLabel(ch.label); setShortLabel(ch.shortLabel || ''); setSkill(ch.skill || ''); setColor({ bg: ch.bg, fg: ch.fg }); setShowColors(false); }}
+            style={{ background: 'transparent', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '7px 12px', fontSize: 12, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer' }}
+          >되돌리기</button>
+          <button
+            type="button"
+            onClick={() => { onUpdate(ch.value, { label: label.trim() || ch.label, shortLabel: shortLabel.trim(), skill: skill.trim(), bg: color.bg, fg: color.fg }); setShowColors(false); }}
+            style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontFamily: 'inherit', cursor: 'pointer', fontWeight: 500 }}
+          >저장</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChannelManagerModal({ channels, onClose, onAdd, onUpdate, onDelete }) {
+  const [adding, setAdding] = useState(false);
+  const [newLabel, setNewLabel] = useState('');
+  const [newShort, setNewShort] = useState('');
+  const [newSkill, setNewSkill] = useState('');
+  const [newColor, setNewColor] = useState(CHANNEL_COLOR_PRESETS[0]);
+
+  const fieldStyle = {
+    width: '100%', padding: '10px 12px', border: '0.5px solid rgba(0,0,0,0.18)',
+    borderRadius: 8, fontSize: 13, fontFamily: 'inherit', background: '#FFFFFF',
+    boxSizing: 'border-box', outline: 'none', color: '#1A1A1A'
+  };
+  const miniLabel = { fontSize: 11, color: '#888780', marginBottom: 4, display: 'block' };
+
+  const resetAdd = () => { setAdding(false); setNewLabel(''); setNewShort(''); setNewSkill(''); setNewColor(CHANNEL_COLOR_PRESETS[0]); };
+  const submitAdd = () => {
+    if (!newLabel.trim()) { alert('채널 이름을 입력해주세요'); return; }
+    onAdd({ label: newLabel.trim(), shortLabel: newShort.trim(), skill: newSkill.trim(), bg: newColor.bg, fg: newColor.fg });
+    resetAdd();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ padding: 0, overflow: 'hidden', maxWidth: 520, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 14px 14px 20px', borderBottom: '0.5px solid rgba(0,0,0,0.06)' }}>
+          <h3 style={{ fontSize: 17, fontWeight: 600, margin: 0 }}>채널 관리</h3>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: 22, cursor: 'pointer', color: '#1A1A1A', padding: 4, lineHeight: 1 }} aria-label="닫기">×</button>
+        </div>
+
+        <div style={{ padding: 20, overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <p style={{ fontSize: 12, color: '#888780', margin: 0, lineHeight: 1.5 }}>
+            색상 칩을 누르면 색을 바꿀 수 있어요. 이름을 고치면 기존 콘텐츠의 채널 이름도 함께 업데이트돼요.
+          </p>
+
+          {channels.map(ch => (
+            <ChannelRow key={ch.value} ch={ch} onUpdate={onUpdate} onDelete={onDelete} />
+          ))}
+
+          {/* 새 채널 추가 */}
+          {adding ? (
+            <div style={{ background: '#FAF5E8', border: '0.5px solid #E5DCC4', borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A1A' }}>새 채널 추가</div>
+              <div>
+                <label style={miniLabel}>채널 이름</label>
+                <input autoFocus value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="예: 유튜브 쇼츠" style={fieldStyle} />
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={miniLabel}>짧은 이름 (선택)</label>
+                  <input value={newShort} onChange={(e) => setNewShort(e.target.value)} placeholder="예: 쇼츠" style={fieldStyle} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={miniLabel}>작성 스킬 (선택)</label>
+                  <input value={newSkill} onChange={(e) => setNewSkill(e.target.value)} placeholder="예: youtube-writer" style={fieldStyle} />
+                </div>
+              </div>
+              <div>
+                <label style={miniLabel}>색상</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {CHANNEL_COLOR_PRESETS.map((p, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setNewColor(p)}
+                      style={{
+                        width: 30, height: 30, borderRadius: 8, background: p.bg,
+                        border: newColor.bg === p.bg && newColor.fg === p.fg ? '2px solid #1A1A1A' : `2px solid ${p.fg}`,
+                        cursor: 'pointer'
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 2 }}>
+                <button type="button" onClick={resetAdd} style={{ background: 'transparent', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer' }}>취소</button>
+                <button type="button" onClick={submitAdd} style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontFamily: 'inherit', cursor: 'pointer', fontWeight: 500 }}>추가</button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAdding(true)}
+              style={{ background: 'transparent', border: '1px dashed rgba(0,0,0,0.25)', borderRadius: 12, padding: '14px', fontSize: 14, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer', fontWeight: 500 }}
+            >+ 새 채널 추가</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EditModal({ item, onSave, onClose }) {
   const [form, setForm] = useState(item);
   const [showMore, setShowMore] = useState(!!(item.mainKeyword || item.asset || item.isCore));
@@ -1295,6 +1614,9 @@ function EditModal({ item, onSave, onClose }) {
           <div style={{ marginBottom: 8 }}>
             <label style={labelStyle}>채널</label>
             <select value={form.channel} onChange={(e) => handleChannelChange(e.target.value)} style={selectStyle}>
+              {!CHANNEL_OPTIONS.some(opt => opt.value === form.channel) && (
+                <option value={form.channel}>{form.channelName || form.channel} (삭제된 채널)</option>
+              )}
               {CHANNEL_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
             </select>
           </div>
