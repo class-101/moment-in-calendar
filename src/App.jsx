@@ -79,6 +79,21 @@ const todayYM = (() => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 })();
 
+const todayDateStr = (() => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+})();
+
+// hex 색을 흰색과 섞어 연한 배경색 만들기 (색상 피커용)
+const tintBg = (hex, ratio = 0.86) => {
+  const m = /^#?([0-9a-f]{6})$/i.exec((hex || '').trim());
+  if (!m) return '#F0F0EB';
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const mix = (c) => Math.round(c + (255 - c) * ratio);
+  return `#${[mix(r), mix(g), mix(b)].map(x => x.toString(16).padStart(2, '0')).join('')}`;
+};
+
 const dayLabels = ['일', '월', '화', '수', '목', '금', '토'];
 
 const dbToItem = (row) => ({
@@ -94,6 +109,7 @@ const dbToItem = (row) => ({
   strength: row.strength,
   asset: row.asset,
   nextSkill: row.next_skill,
+  referenceUrl: row.reference_url || '',
   description: row.description || '',
   completed: row.completed,
   archived: !!row.archived,
@@ -115,6 +131,7 @@ const itemToDb = (item, userId) => ({
   strength: item.strength || null,
   asset: item.asset || null,
   next_skill: item.nextSkill || null,
+  reference_url: item.referenceUrl || null,
   description: item.description || null,
   completed: !!item.completed,
   archived: !!item.archived,
@@ -325,6 +342,27 @@ export default function App({ session }) {
       await loadMonthData();
     } catch (err) {
       alert('채널 삭제 실패: ' + (err.message || err));
+    }
+  };
+
+  // 채널 순서 이동 (dir: -1 위로 / +1 아래로)
+  const moveChannel = async (value, dir) => {
+    const list = [...channels].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+    const idx = list.findIndex(c => c.value === value);
+    const target = idx + dir;
+    if (idx < 0 || target < 0 || target >= list.length) return;
+    [list[idx], list[target]] = [list[target], list[idx]];
+    // 낙관적 업데이트로 즉시 반영
+    const reordered = list.map((c, i) => ({ ...c, sortOrder: i + 1 }));
+    applyChannelData(reordered);
+    setChannels(reordered);
+    try {
+      await Promise.all(reordered.map(c =>
+        supabase.from('channels').update({ sort_order: c.sortOrder }).eq('value', c.value)
+      ));
+    } catch (err) {
+      alert('순서 변경 실패: ' + (err.message || err));
+      await loadChannels();
     }
   };
 
@@ -675,7 +713,7 @@ export default function App({ session }) {
       channel: def.value,
       channelName: def.label,
       isCore: false, mainKeyword: '', subKeywords: [], strength: '', asset: '',
-      nextSkill: def.skill || '', description: '', completed: false
+      nextSkill: def.skill || '', referenceUrl: '', description: '', completed: false
     };
   };
 
@@ -873,7 +911,7 @@ export default function App({ session }) {
               <button onClick={goToday} style={{ ...navBtnStyle, width: 'auto', padding: '6px 10px', fontSize: 12, color: '#5F5E5A' }}>오늘</button>
             </div>
             <div className="header-actions">
-              <button onClick={() => setEditingItem(newItemDefaults())} style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', borderRadius: 8, padding: '8px 12px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, whiteSpace: 'nowrap' }}>+ 새 콘텐츠</button>
+              <button onClick={() => setEditingItem(newItemDefaults(todayDateStr))} style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', borderRadius: 8, padding: '8px 12px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, whiteSpace: 'nowrap' }}>+ 새 콘텐츠</button>
               <button onClick={() => { if (selectMode) exitSelectMode(); else setSelectMode(true); }} style={{ background: selectMode ? '#1A1A1A' : 'transparent', color: selectMode ? '#FFFFFF' : '#5F5E5A', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', cursor: 'pointer', whiteSpace: 'nowrap' }} title="여러 개 선택">{selectMode ? '✕ 선택 해제' : '✓ 선택'}</button>
               <button onClick={openArchive} style={{ background: 'transparent', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer', whiteSpace: 'nowrap' }} title="보관함">📦 보관함</button>
               <button onClick={() => setChannelMgrOpen(true)} style={{ background: 'transparent', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer', whiteSpace: 'nowrap' }} title="채널 관리">🎨 채널</button>
@@ -886,7 +924,7 @@ export default function App({ session }) {
         {/* 선택 모드 안내 */}
         {selectMode && (
           <div style={{ background: '#FAF5E8', border: '0.5px solid #E5DCC4', borderRadius: 10, padding: '10px 14px', marginBottom: 12, fontSize: 13, color: '#5F5E5A' }}>
-            선택 모드입니다. 콘텐츠를 클릭(탭)하면 선택/해제되고, 하단 바에서 한 번에 보관할 수 있어요. <span style={{ color: '#888780' }}>(드래그 이동은 일시 중지)</span>
+            콘텐츠를 탭해 선택하고 하단 바에서 한 번에 보관하세요.
           </div>
         )}
 
@@ -1166,6 +1204,7 @@ export default function App({ session }) {
             onAdd={addChannel}
             onUpdate={updateChannel}
             onDelete={deleteChannel}
+            onMove={moveChannel}
           />
         )}
 
@@ -1290,6 +1329,7 @@ function DetailModal({ item, performance, onClose, onToggleCompleted, onUpdatePe
         </div>
 
         <div style={{ padding: '0 22px 4px', borderTop: '0.5px solid rgba(0,0,0,0.06)', paddingTop: 12 }}>
+          {item.referenceUrl && <InfoRow label="레퍼런스" value={<a href={item.referenceUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#3A6B9E', wordBreak: 'break-all', textDecoration: 'underline' }}>{item.referenceUrl}</a>} />}
           {item.mainKeyword && <InfoRow label="메인 키워드" value={<div><div>{item.mainKeyword}</div>{item.strength && <div style={{ color: '#888780', fontSize: 12, marginTop: 2 }}>{item.strength}</div>}</div>} />}
           {item.asset && <InfoRow label="자산" value={item.asset} />}
           {item.nextSkill && <InfoRow label="작성 스킬" value={<code style={{ background: '#F8F8F6', padding: '2px 8px', borderRadius: 4, fontSize: 12, color: '#5F5E5A', fontFamily: 'ui-monospace, monospace' }}>{item.nextSkill}</code>} />}
@@ -1337,111 +1377,117 @@ function InfoRow({ label, value }) {
 }
 
 // ============================================================
-// 채널 관리 모달 (추가 / 이름변경 / 색상변경 / 삭제)
+// 채널 관리 모달 (추가 / 이름변경 / 색상변경 / 순서 / 삭제)
 // ============================================================
-function ChannelRow({ ch, onUpdate, onDelete }) {
+const chFieldStyle = {
+  width: '100%', padding: '9px 11px', border: '0.5px solid rgba(0,0,0,0.18)',
+  borderRadius: 8, fontSize: 13, fontFamily: 'inherit', background: '#FFFFFF',
+  boxSizing: 'border-box', outline: 'none', color: '#1A1A1A'
+};
+const chMiniLabel = { fontSize: 11, color: '#888780', marginBottom: 4, display: 'block' };
+
+// 색상 선택기: 프리셋 + 직접 선택(배경/글자) + 배경 자동
+function ColorEditor({ color, onChange }) {
+  const pickWrap = { display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#5F5E5A', cursor: 'pointer', position: 'relative' };
+  const nativeInput = { position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', border: 'none', padding: 0 };
+  const swatch = (bg) => ({ width: 22, height: 22, borderRadius: 6, background: bg, border: '1px solid rgba(0,0,0,0.15)', display: 'inline-block' });
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {CHANNEL_COLOR_PRESETS.map((p, i) => (
+          <button key={i} type="button" onClick={() => onChange(p)}
+            style={{ width: 26, height: 26, borderRadius: 7, background: p.bg,
+              border: color.bg === p.bg && color.fg === p.fg ? '2px solid #1A1A1A' : `2px solid ${p.fg}`, cursor: 'pointer' }} />
+        ))}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+        <label style={pickWrap}>
+          <span style={swatch(color.bg)} /> 배경
+          <input type="color" value={color.bg} onChange={(e) => onChange({ ...color, bg: e.target.value })} style={nativeInput} />
+        </label>
+        <label style={pickWrap}>
+          <span style={swatch(color.fg)} /> 글자
+          <input type="color" value={color.fg} onChange={(e) => onChange({ ...color, fg: e.target.value })} style={nativeInput} />
+        </label>
+        <button type="button" onClick={() => onChange({ ...color, bg: tintBg(color.fg) })}
+          style={{ background: 'transparent', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 7, padding: '5px 10px', fontSize: 12, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer' }}
+          title="글자색에 맞춰 배경을 연하게 자동 생성">배경 자동</button>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, padding: '4px 9px', borderRadius: 6, background: color.bg, color: color.fg, fontWeight: 500 }}>미리보기</span>
+      </div>
+    </div>
+  );
+}
+
+function ChannelRow({ ch, index, total, onUpdate, onDelete, onMove }) {
   const [label, setLabel] = useState(ch.label);
   const [shortLabel, setShortLabel] = useState(ch.shortLabel || '');
   const [skill, setSkill] = useState(ch.skill || '');
   const [color, setColor] = useState({ bg: ch.bg, fg: ch.fg });
-  const [showColors, setShowColors] = useState(false);
+  const [open, setOpen] = useState(false);
 
-  // 부모(DB) 값이 바뀌면 입력값 동기화
   useEffect(() => {
-    setLabel(ch.label);
-    setShortLabel(ch.shortLabel || '');
-    setSkill(ch.skill || '');
+    setLabel(ch.label); setShortLabel(ch.shortLabel || ''); setSkill(ch.skill || '');
     setColor({ bg: ch.bg, fg: ch.fg });
   }, [ch.value, ch.label, ch.shortLabel, ch.skill, ch.bg, ch.fg]);
 
   const dirty = label !== ch.label || shortLabel !== (ch.shortLabel || '') ||
     skill !== (ch.skill || '') || color.bg !== ch.bg || color.fg !== ch.fg;
 
-  const fieldStyle = {
-    width: '100%', padding: '8px 10px', border: '0.5px solid rgba(0,0,0,0.18)',
-    borderRadius: 8, fontSize: 13, fontFamily: 'inherit', background: '#FFFFFF',
-    boxSizing: 'border-box', outline: 'none', color: '#1A1A1A'
-  };
-  const miniLabel = { fontSize: 11, color: '#888780', marginBottom: 4, display: 'block' };
+  const arrowBtn = (disabled) => ({
+    background: 'transparent', border: 'none', cursor: disabled ? 'default' : 'pointer',
+    color: disabled ? '#CFCDC5' : '#888780', fontSize: 11, lineHeight: 1, padding: 0, height: 13
+  });
 
   return (
-    <div style={{ background: '#FAF9F5', borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <button
-          type="button"
-          onClick={() => setShowColors(s => !s)}
-          title="색상 변경"
-          style={{ width: 26, height: 26, borderRadius: 7, background: color.bg, border: `2px solid ${color.fg}`, cursor: 'pointer', flexShrink: 0 }}
-        />
-        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="채널 이름" style={{ ...fieldStyle, fontWeight: 500 }} />
-        <button
-          type="button"
-          onClick={() => onDelete(ch.value)}
-          title="채널 삭제"
-          style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 16, color: '#C0392B', padding: '4px 6px', flexShrink: 0 }}
-        >🗑️</button>
+    <div style={{ background: '#FAF9F5', borderRadius: 12, padding: 12, display: 'flex', flexDirection: 'column', gap: open ? 12 : 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', flexShrink: 0 }}>
+          <button type="button" disabled={index === 0} onClick={() => onMove(ch.value, -1)} style={arrowBtn(index === 0)} title="위로">▲</button>
+          <button type="button" disabled={index === total - 1} onClick={() => onMove(ch.value, 1)} style={arrowBtn(index === total - 1)} title="아래로">▼</button>
+        </div>
+        <button type="button" onClick={() => setOpen(o => !o)} title="색상·옵션"
+          style={{ width: 24, height: 24, borderRadius: 7, background: color.bg, border: `2px solid ${color.fg}`, cursor: 'pointer', flexShrink: 0 }} />
+        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="채널 이름" style={{ ...chFieldStyle, fontWeight: 500 }} />
+        <button type="button" onClick={() => onDelete(ch.value)} title="삭제"
+          style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 15, color: '#C0392B', padding: '4px 4px', flexShrink: 0 }}>🗑️</button>
       </div>
 
-      {showColors && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {CHANNEL_COLOR_PRESETS.map((p, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => setColor(p)}
-              style={{
-                width: 28, height: 28, borderRadius: 7, background: p.bg,
-                border: color.bg === p.bg && color.fg === p.fg ? '2px solid #1A1A1A' : `2px solid ${p.fg}`,
-                cursor: 'pointer'
-              }}
-              title={`${p.bg} / ${p.fg}`}
-            />
-          ))}
-        </div>
+      {open && (
+        <>
+          <ColorEditor color={color} onChange={setColor} />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <label style={chMiniLabel}>짧은 이름</label>
+              <input value={shortLabel} onChange={(e) => setShortLabel(e.target.value)} placeholder={label || '예: 블로그'} style={chFieldStyle} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={chMiniLabel}>작성 스킬</label>
+              <input value={skill} onChange={(e) => setSkill(e.target.value)} placeholder="선택" style={chFieldStyle} />
+            </div>
+          </div>
+        </>
       )}
 
-      <div style={{ display: 'flex', gap: 8 }}>
-        <div style={{ flex: 1 }}>
-          <label style={miniLabel}>짧은 이름 (필터·통계용)</label>
-          <input value={shortLabel} onChange={(e) => setShortLabel(e.target.value)} placeholder={label || '예: 블로그'} style={fieldStyle} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <label style={miniLabel}>작성 스킬 (선택)</label>
-          <input value={skill} onChange={(e) => setSkill(e.target.value)} placeholder="예: momentin-blog-writer" style={fieldStyle} />
-        </div>
-      </div>
-
       {dirty && (
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button
-            type="button"
-            onClick={() => { setLabel(ch.label); setShortLabel(ch.shortLabel || ''); setSkill(ch.skill || ''); setColor({ bg: ch.bg, fg: ch.fg }); setShowColors(false); }}
-            style={{ background: 'transparent', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '7px 12px', fontSize: 12, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer' }}
-          >되돌리기</button>
-          <button
-            type="button"
-            onClick={() => { onUpdate(ch.value, { label: label.trim() || ch.label, shortLabel: shortLabel.trim(), skill: skill.trim(), bg: color.bg, fg: color.fg }); setShowColors(false); }}
-            style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontFamily: 'inherit', cursor: 'pointer', fontWeight: 500 }}
-          >저장</button>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: open ? 0 : 10 }}>
+          <button type="button"
+            onClick={() => { setLabel(ch.label); setShortLabel(ch.shortLabel || ''); setSkill(ch.skill || ''); setColor({ bg: ch.bg, fg: ch.fg }); }}
+            style={{ background: 'transparent', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '7px 12px', fontSize: 12, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer' }}>되돌리기</button>
+          <button type="button"
+            onClick={() => onUpdate(ch.value, { label: label.trim() || ch.label, shortLabel: shortLabel.trim(), skill: skill.trim(), bg: color.bg, fg: color.fg })}
+            style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontFamily: 'inherit', cursor: 'pointer', fontWeight: 500 }}>저장</button>
         </div>
       )}
     </div>
   );
 }
 
-function ChannelManagerModal({ channels, onClose, onAdd, onUpdate, onDelete }) {
+function ChannelManagerModal({ channels, onClose, onAdd, onUpdate, onDelete, onMove }) {
   const [adding, setAdding] = useState(false);
   const [newLabel, setNewLabel] = useState('');
   const [newShort, setNewShort] = useState('');
   const [newSkill, setNewSkill] = useState('');
   const [newColor, setNewColor] = useState(CHANNEL_COLOR_PRESETS[0]);
-
-  const fieldStyle = {
-    width: '100%', padding: '10px 12px', border: '0.5px solid rgba(0,0,0,0.18)',
-    borderRadius: 8, fontSize: 13, fontFamily: 'inherit', background: '#FFFFFF',
-    boxSizing: 'border-box', outline: 'none', color: '#1A1A1A'
-  };
-  const miniLabel = { fontSize: 11, color: '#888780', marginBottom: 4, display: 'block' };
 
   const resetAdd = () => { setAdding(false); setNewLabel(''); setNewShort(''); setNewSkill(''); setNewColor(CHANNEL_COLOR_PRESETS[0]); };
   const submitAdd = () => {
@@ -1458,61 +1504,27 @@ function ChannelManagerModal({ channels, onClose, onAdd, onUpdate, onDelete }) {
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: 22, cursor: 'pointer', color: '#1A1A1A', padding: 4, lineHeight: 1 }} aria-label="닫기">×</button>
         </div>
 
-        <div style={{ padding: 20, overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <p style={{ fontSize: 12, color: '#888780', margin: 0, lineHeight: 1.5 }}>
-            색상 칩을 누르면 색을 바꿀 수 있어요. 이름을 고치면 기존 콘텐츠의 채널 이름도 함께 업데이트돼요.
-          </p>
-
-          {channels.map(ch => (
-            <ChannelRow key={ch.value} ch={ch} onUpdate={onUpdate} onDelete={onDelete} />
+        <div style={{ padding: 20, overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {channels.map((ch, i) => (
+            <ChannelRow key={ch.value} ch={ch} index={i} total={channels.length} onUpdate={onUpdate} onDelete={onDelete} onMove={onMove} />
           ))}
 
-          {/* 새 채널 추가 */}
           {adding ? (
             <div style={{ background: '#FAF5E8', border: '0.5px solid #E5DCC4', borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A1A' }}>새 채널 추가</div>
-              <div>
-                <label style={miniLabel}>채널 이름</label>
-                <input autoFocus value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="예: 유튜브 쇼츠" style={fieldStyle} />
-              </div>
+              <input autoFocus value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="채널 이름 (예: 유튜브 쇼츠)" style={{ ...chFieldStyle, fontWeight: 500 }} />
               <div style={{ display: 'flex', gap: 8 }}>
-                <div style={{ flex: 1 }}>
-                  <label style={miniLabel}>짧은 이름 (선택)</label>
-                  <input value={newShort} onChange={(e) => setNewShort(e.target.value)} placeholder="예: 쇼츠" style={fieldStyle} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={miniLabel}>작성 스킬 (선택)</label>
-                  <input value={newSkill} onChange={(e) => setNewSkill(e.target.value)} placeholder="예: youtube-writer" style={fieldStyle} />
-                </div>
+                <input value={newShort} onChange={(e) => setNewShort(e.target.value)} placeholder="짧은 이름 (선택)" style={chFieldStyle} />
+                <input value={newSkill} onChange={(e) => setNewSkill(e.target.value)} placeholder="작성 스킬 (선택)" style={chFieldStyle} />
               </div>
-              <div>
-                <label style={miniLabel}>색상</label>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {CHANNEL_COLOR_PRESETS.map((p, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => setNewColor(p)}
-                      style={{
-                        width: 30, height: 30, borderRadius: 8, background: p.bg,
-                        border: newColor.bg === p.bg && newColor.fg === p.fg ? '2px solid #1A1A1A' : `2px solid ${p.fg}`,
-                        cursor: 'pointer'
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
+              <ColorEditor color={newColor} onChange={setNewColor} />
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 2 }}>
                 <button type="button" onClick={resetAdd} style={{ background: 'transparent', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer' }}>취소</button>
                 <button type="button" onClick={submitAdd} style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontFamily: 'inherit', cursor: 'pointer', fontWeight: 500 }}>추가</button>
               </div>
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => setAdding(true)}
-              style={{ background: 'transparent', border: '1px dashed rgba(0,0,0,0.25)', borderRadius: 12, padding: '14px', fontSize: 14, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer', fontWeight: 500 }}
-            >+ 새 채널 추가</button>
+            <button type="button" onClick={() => setAdding(true)}
+              style={{ background: 'transparent', border: '1px dashed rgba(0,0,0,0.25)', borderRadius: 12, padding: '13px', fontSize: 14, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer', fontWeight: 500 }}>+ 새 채널 추가</button>
           )}
         </div>
       </div>
@@ -1611,7 +1623,7 @@ function EditModal({ item, onSave, onClose }) {
           </div>
 
           {/* 채널 */}
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 16 }}>
             <label style={labelStyle}>채널</label>
             <select value={form.channel} onChange={(e) => handleChannelChange(e.target.value)} style={selectStyle}>
               {!CHANNEL_OPTIONS.some(opt => opt.value === form.channel) && (
@@ -1619,6 +1631,19 @@ function EditModal({ item, onSave, onClose }) {
               )}
               {CHANNEL_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
             </select>
+          </div>
+
+          {/* 레퍼런스 URL */}
+          <div style={{ marginBottom: 8 }}>
+            <label style={labelStyle}>레퍼런스 URL</label>
+            <input
+              type="url"
+              inputMode="url"
+              value={form.referenceUrl || ''}
+              onChange={(e) => handleChange('referenceUrl', e.target.value)}
+              style={inputStyle}
+              placeholder="참고할 링크를 붙여넣으세요"
+            />
           </div>
 
           {/* 더보기 토글 */}
