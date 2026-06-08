@@ -101,6 +101,16 @@ const tintBg = (hex, ratio = 0.86) => {
 
 const dayLabels = ['일', '월', '화', '수', '목', '금', '토'];
 
+// 레퍼런스 URL 유무 마커 (있음 🔗 / 없음 ⚠️)
+function RefMark({ it }) {
+  const has = !!(it.referenceUrl && it.referenceUrl.trim());
+  return (
+    <span title={has ? '레퍼런스 있음' : '레퍼런스 없음'} style={{ fontSize: 9.5, marginRight: 3, opacity: has ? 0.9 : 0.95, verticalAlign: 'middle' }}>
+      {has ? '🔗' : '⚠️'}
+    </span>
+  );
+}
+
 const dbToItem = (row) => ({
   id: row.id,
   date: row.date,
@@ -195,6 +205,7 @@ export default function App({ session }) {
   const [filterChannels, setFilterChannels] = useState(new Set()); // 빈 Set = 전체
   const [filterCompleted, setFilterCompleted] = useState('all'); // 'all' | 'todo' | 'done'
   const [filterCore, setFilterCore] = useState(false);
+  const [filterRef, setFilterRef] = useState('all'); // 'all' | 'has' | 'none'
   const [filterOpen, setFilterOpen] = useState(false);
 
   useEffect(() => {
@@ -625,11 +636,15 @@ export default function App({ session }) {
       if (filterCompleted === 'done' && !it.completed) return false;
       // 핵심만
       if (filterCore && !it.isCore) return false;
+      // 레퍼런스 유무
+      const hasRef = !!(it.referenceUrl && it.referenceUrl.trim());
+      if (filterRef === 'has' && !hasRef) return false;
+      if (filterRef === 'none' && hasRef) return false;
       return true;
     });
   };
   const filteredItems = applyFilters(items);
-  const isFiltered = searchQuery || filterChannels.size > 0 || filterCompleted !== 'all' || filterCore;
+  const isFiltered = searchQuery || filterChannels.size > 0 || filterCompleted !== 'all' || filterCore || filterRef !== 'all';
 
   // 캘린더 그리드 (6주 = 42일, 이전달·다음달 일부 포함)
   const [yearStr, monthStr] = currentMonth.split('-');
@@ -696,6 +711,7 @@ export default function App({ session }) {
     setFilterChannels(new Set());
     setFilterCompleted('all');
     setFilterCore(false);
+    setFilterRef('all');
   };
 
   const prevMonth = () => {
@@ -974,10 +990,10 @@ export default function App({ session }) {
             </div>
             <button
               onClick={() => setFilterOpen(!filterOpen)}
-              className={`filter-btn ${(filterChannels.size > 0 || filterCompleted !== 'all' || filterCore) ? 'active' : ''}`}
+              className={`filter-btn ${(filterChannels.size > 0 || filterCompleted !== 'all' || filterCore || filterRef !== 'all') ? 'active' : ''}`}
               title="필터"
             >
-              필터{(filterChannels.size > 0 || filterCompleted !== 'all' || filterCore) && <span className="filter-dot" />}
+              필터{(filterChannels.size > 0 || filterCompleted !== 'all' || filterCore || filterRef !== 'all') && <span className="filter-dot" />}
             </button>
             {isFiltered && (
               <button onClick={clearAllFilters} className="filter-clear-btn">초기화</button>
@@ -1043,6 +1059,22 @@ export default function App({ session }) {
                   onClick={() => setFilterCore(c => !c)}
                   className={`filter-chip ${filterCore ? 'active' : ''}`}
                 >★ 핵심 콘텐츠만</button>
+              </div>
+            </div>
+            <div className="filter-section">
+              <div className="filter-section-label">레퍼런스</div>
+              <div className="filter-chips">
+                {[
+                  { value: 'all', label: '전체' },
+                  { value: 'has', label: '🔗 있음' },
+                  { value: 'none', label: '⚠️ 없음' }
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setFilterRef(opt.value)}
+                    className={`filter-chip ${filterRef === opt.value ? 'active' : ''}`}
+                  >{opt.label}</button>
+                ))}
               </div>
             </div>
           </div>
@@ -1119,7 +1151,7 @@ export default function App({ session }) {
                                   setContextMenu({ x: e.clientX, y: e.clientY, item: it });
                                 }}
                               >
-                                {selectMode && (isSelected ? '☑ ' : '☐ ')}{it.isCore && '★ '}{it.title}
+                                {selectMode && (isSelected ? '☑ ' : '☐ ')}<RefMark it={it} />{it.isCore && '★ '}{it.title}
                               </button>
                             );
                           })}
@@ -1576,7 +1608,8 @@ function EditModal({ item, onSave, onClose }) {
   };
   const handleSave = () => {
     if (!form.title || !form.title.trim()) { alert('제목을 입력해주세요'); return; }
-    onSave(form);
+    if (!form.referenceUrl || !form.referenceUrl.trim()) { alert('레퍼런스 URL을 입력해주세요.\n콘텐츠에는 레퍼런스가 꼭 필요해요.'); return; }
+    onSave({ ...form, referenceUrl: form.referenceUrl.trim() });
   };
 
   const inputStyle = {
@@ -1660,16 +1693,16 @@ function EditModal({ item, onSave, onClose }) {
             </select>
           </div>
 
-          {/* 레퍼런스 URL */}
+          {/* 레퍼런스 URL — 필수 */}
           <div style={{ marginBottom: 8 }}>
-            <label style={labelStyle}>레퍼런스 URL</label>
+            <label style={labelStyle}>레퍼런스 URL <span style={{ color: '#D4537E' }}>*필수</span></label>
             <input
               type="url"
               inputMode="url"
               value={form.referenceUrl || ''}
               onChange={(e) => handleChange('referenceUrl', e.target.value)}
-              style={inputStyle}
-              placeholder="참고할 링크를 붙여넣으세요"
+              style={{ ...inputStyle, boxShadow: (form.referenceUrl && form.referenceUrl.trim()) ? 'none' : 'inset 0 0 0 1.5px #E7B7C6' }}
+              placeholder="참고할 링크를 붙여넣으세요 (필수)"
             />
           </div>
 
@@ -1952,7 +1985,7 @@ function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, o
                       <div className="list-item-dot" style={{ background: c.bg }} />
                       <div className="list-item-content">
                         <div className={`list-item-title ${it.completed ? 'completed' : ''}`}>
-                          {it.isCore && <span style={{ color: '#D4A92E', marginRight: 4 }}>★</span>}
+                          <RefMark it={it} />{it.isCore && <span style={{ color: '#D4A92E', marginRight: 4 }}>★</span>}
                           {it.title}
                         </div>
                         <div className="list-item-meta">
@@ -2040,7 +2073,7 @@ function WeekView({ weekStart, setWeekStart, items, holidays, anniversaries, onI
                           {selectMode && <span style={{ fontSize: 15 }}>{isSelected ? '☑' : '☐'}</span>}
                           <span style={{ width: 4, height: 4, borderRadius: '50%', background: c.fg, flexShrink: 0 }} />
                           <span style={{ fontSize: 13, color: it.completed ? '#aaa' : '#1A1A1A', textDecoration: it.completed ? 'line-through' : 'none', flex: 1 }}>
-                            {it.isCore && '★ '}{it.title}
+                            <RefMark it={it} />{it.isCore && '★ '}{it.title}
                           </span>
                         </button>
                       );
@@ -2089,7 +2122,7 @@ function WeekView({ weekStart, setWeekStart, items, holidays, anniversaries, onI
                         onDragEnd={handleDragEnd}
                         onClick={(e) => handleItemClick(e, it, isDragging)}
                         onContextMenu={(e) => { if (selectMode) return; onItemContextMenu && onItemContextMenu(e, it); }}
-                      >{selectMode && (isSelected ? '☑ ' : '☐ ')}{it.isCore && '★ '}{it.title}</button>
+                      >{selectMode && (isSelected ? '☑ ' : '☐ ')}<RefMark it={it} />{it.isCore && '★ '}{it.title}</button>
                     );
                   })}
                 </div>
