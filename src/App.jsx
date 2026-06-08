@@ -125,6 +125,7 @@ const dbToItem = (row) => ({
   asset: row.asset,
   nextSkill: row.next_skill,
   referenceUrl: row.reference_url || '',
+  attachments: Array.isArray(row.attachments) ? row.attachments : [],
   description: row.description || '',
   completed: row.completed,
   archived: !!row.archived,
@@ -147,6 +148,7 @@ const itemToDb = (item, userId) => ({
   asset: item.asset || null,
   next_skill: item.nextSkill || null,
   reference_url: item.referenceUrl || null,
+  attachments: Array.isArray(item.attachments) ? item.attachments : [],
   description: item.description || null,
   completed: !!item.completed,
   archived: !!item.archived,
@@ -745,7 +747,7 @@ export default function App({ session }) {
       channel: def.value,
       channelName: def.label,
       isCore: false, mainKeyword: '', subKeywords: [], strength: '', asset: '',
-      nextSkill: def.skill || '', referenceUrl: '', description: '', completed: false
+      nextSkill: def.skill || '', referenceUrl: '', attachments: [], description: '', completed: false
     };
   };
 
@@ -933,8 +935,9 @@ export default function App({ session }) {
         .modal-content.edit-modal { max-width: 620px; }
         @media (min-width: 1024px) { .modal-content.edit-modal { max-width: 720px; } }
         @media (max-width: 640px) { .modal-content.edit-modal { max-width: 100%; } }
-        /* 상세 모달 */
-        .modal-content.detail-modal { max-width: 560px; }
+        /* 상세 모달 — 수정 모달과 동일한 폭 */
+        .modal-content.detail-modal { max-width: 620px; }
+        @media (min-width: 1024px) { .modal-content.detail-modal { max-width: 720px; } }
         @media (max-width: 640px) { .modal-content.detail-modal { max-width: 100%; } }
       `}</style>
 
@@ -1386,6 +1389,23 @@ function DetailModal({ item, performance, onClose, onToggleCompleted, onUpdatePe
           {item.mainKeyword && <InfoRow label="메인 키워드" value={<div><div>{item.mainKeyword}</div>{item.strength && <div style={{ color: '#888780', fontSize: 12, marginTop: 2 }}>{item.strength}</div>}</div>} />}
           {item.asset && <InfoRow label="자산" value={item.asset} />}
           {item.nextSkill && <InfoRow label="작성 스킬" value={<code style={{ background: '#F8F8F6', padding: '2px 8px', borderRadius: 4, fontSize: 12, color: '#5F5E5A', fontFamily: 'ui-monospace, monospace', overflowWrap: 'anywhere' }}>{item.nextSkill}</code>} />}
+          {Array.isArray(item.attachments) && item.attachments.length > 0 && (
+            <InfoRow label="첨부" value={
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {item.attachments.map((a, i) => {
+                  const isImg = /^image\//.test(a.type || '') || /\.(png|jpe?g|gif|webp|svg|heic)$/i.test(a.name || '');
+                  return (
+                    <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none', color: '#1A1A1A' }}>
+                      {isImg
+                        ? <img src={a.url} alt="" style={{ width: 30, height: 30, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
+                        : <span style={{ width: 30, height: 30, borderRadius: 6, background: '#EEEBE3', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 15 }}>📄</span>}
+                      <span style={{ fontSize: 13, color: '#3A6B9E', textDecoration: 'underline', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
+                    </a>
+                  );
+                })}
+              </div>
+            } />
+          )}
           {item.description && <InfoRow label="메모" value={<div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5, overflowWrap: 'anywhere' }}>{item.description}</div>} />}
         </div>
 
@@ -1618,9 +1638,38 @@ function ChannelManagerModal({ channels, onClose, onAdd, onUpdate, onDelete, onM
 function EditModal({ item, onSave, onClose }) {
   const [form, setForm] = useState(item);
   const [showMore, setShowMore] = useState(!!(item.mainKeyword || item.asset || item.isCore));
+  const [uploading, setUploading] = useState(false);
   const isEdit = !!item.id;
 
   const handleChange = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
+
+  // 첨부파일 업로드 / 제거
+  const handleFiles = async (fileList) => {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const added = [];
+      for (const file of files) {
+        const safe = (file.name || 'file').replace(/[^\w.\-]+/g, '_');
+        const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safe}`;
+        const { error } = await supabase.storage.from('attachments').upload(path, file, { cacheControl: '3600', upsert: false });
+        if (error) throw error;
+        const { data } = supabase.storage.from('attachments').getPublicUrl(path);
+        added.push({ name: file.name, url: data.publicUrl, path, size: file.size, type: file.type || '' });
+      }
+      setForm(prev => ({ ...prev, attachments: [...(prev.attachments || []), ...added] }));
+    } catch (e) {
+      alert('첨부 실패: ' + (e.message || e));
+    } finally {
+      setUploading(false);
+    }
+  };
+  const removeAttachment = async (idx) => {
+    const att = (form.attachments || [])[idx];
+    setForm(prev => ({ ...prev, attachments: (prev.attachments || []).filter((_, i) => i !== idx) }));
+    if (att && att.path) { try { await supabase.storage.from('attachments').remove([att.path]); } catch (e) { /* 무시 */ } }
+  };
   const handleChannelChange = (newChannel) => {
     const opt = CHANNEL_OPTIONS.find(o => o.value === newChannel);
     setForm(prev => ({
@@ -1740,6 +1789,31 @@ function EditModal({ item, onSave, onClose }) {
               </div>
             );
           })()}
+
+          {/* 첨부파일 */}
+          <div style={{ marginBottom: 8, marginTop: 4 }}>
+            <label style={labelStyle}>첨부파일</label>
+            {(form.attachments && form.attachments.length > 0) && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                {form.attachments.map((a, i) => {
+                  const isImg = /^image\//.test(a.type || '') || /\.(png|jpe?g|gif|webp|svg|heic)$/i.test(a.name || '');
+                  return (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#F4F2EC', borderRadius: 8, padding: '8px 10px' }}>
+                      {isImg
+                        ? <img src={a.url} alt="" style={{ width: 34, height: 34, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} />
+                        : <span style={{ width: 34, height: 34, borderRadius: 6, background: '#E5E1D6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 16 }}>📄</span>}
+                      <a href={a.url} target="_blank" rel="noopener noreferrer" style={{ flex: 1, minWidth: 0, fontSize: 13, color: '#1A1A1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</a>
+                      <button type="button" onClick={() => removeAttachment(i)} title="삭제" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#C0392B', fontSize: 18, flexShrink: 0, padding: '2px 4px', lineHeight: 1 }}>×</button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#FFFFFF', border: '1px dashed rgba(0,0,0,0.25)', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: '#5F5E5A', cursor: uploading ? 'default' : 'pointer', fontWeight: 500 }}>
+              {uploading ? '업로드 중…' : '＋ 파일 첨부 (이미지·PDF 등)'}
+              <input type="file" multiple disabled={uploading} onChange={(e) => { handleFiles(e.target.files); e.target.value = ''; }} style={{ display: 'none' }} />
+            </label>
+          </div>
 
           {/* 더보기 토글 */}
           <button
