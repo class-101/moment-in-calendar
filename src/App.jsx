@@ -537,6 +537,13 @@ export default function App({ session }) {
       const item = items.find(i => i.id === itemId);
       if (!item) return;
       const newCompleted = !item.completed;
+      // 발행(완료)하려면 레퍼런스 URL 필요 — 없으면 막고 수정 모달 열기
+      if (newCompleted && !(item.referenceUrl && item.referenceUrl.trim())) {
+        alert('발행하려면 레퍼런스 URL이 필요해요.\n레퍼런스를 먼저 채워주세요.');
+        setEditingItem({ ...item });
+        setSelectedItem(null);
+        return;
+      }
       const { error } = await supabase.from('items').update({ completed: newCompleted }).eq('id', itemId);
       if (error) throw error;
       setItems(prev => prev.map(i => i.id === itemId ? { ...i, completed: newCompleted } : i));
@@ -1389,9 +1396,22 @@ function DetailModal({ item, performance, onClose, onToggleCompleted, onUpdatePe
         </div>
 
         <div style={{ padding: '12px 16px 16px', borderTop: '0.5px solid rgba(0,0,0,0.06)' }}>
-          <button onClick={onToggleCompleted} style={{ width: '100%', background: item.completed ? '#FFFFFF' : '#1A1A1A', color: item.completed ? '#5F5E5A' : '#FFFFFF', border: item.completed ? '0.5px solid rgba(0,0,0,0.18)' : 'none', borderRadius: 10, padding: '14px', cursor: 'pointer', fontSize: 15, fontFamily: 'inherit', fontWeight: 600 }}>
-            {item.completed ? '발행 취소' : '발행 완료'}
-          </button>
+          {(() => {
+            const hasRef = !!(item.referenceUrl && item.referenceUrl.trim());
+            const needRef = !item.completed && !hasRef;
+            return (
+              <>
+                <button onClick={onToggleCompleted} style={{ width: '100%', background: item.completed ? '#FFFFFF' : (needRef ? '#F0EEE8' : '#1A1A1A'), color: item.completed ? '#5F5E5A' : (needRef ? '#8A7B52' : '#FFFFFF'), border: (item.completed || needRef) ? '0.5px solid rgba(0,0,0,0.18)' : 'none', borderRadius: 10, padding: '14px', cursor: 'pointer', fontSize: 15, fontFamily: 'inherit', fontWeight: 600 }}>
+                  {item.completed ? '발행 취소' : (needRef ? '⚠️ 레퍼런스 추가 후 발행' : '발행 완료')}
+                </button>
+                {needRef && (
+                  <div style={{ fontSize: 11.5, color: '#A8946A', marginTop: 8, textAlign: 'center' }}>
+                    발행하려면 레퍼런스 URL이 필요해요
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       </div>
     </div>
@@ -1608,8 +1628,7 @@ function EditModal({ item, onSave, onClose }) {
   };
   const handleSave = () => {
     if (!form.title || !form.title.trim()) { alert('제목을 입력해주세요'); return; }
-    if (!form.referenceUrl || !form.referenceUrl.trim()) { alert('레퍼런스 URL을 입력해주세요.\n콘텐츠에는 레퍼런스가 꼭 필요해요.'); return; }
-    onSave({ ...form, referenceUrl: form.referenceUrl.trim() });
+    onSave({ ...form, referenceUrl: (form.referenceUrl || '').trim() });
   };
 
   const inputStyle = {
@@ -1693,18 +1712,33 @@ function EditModal({ item, onSave, onClose }) {
             </select>
           </div>
 
-          {/* 레퍼런스 URL — 필수 */}
-          <div style={{ marginBottom: 8 }}>
-            <label style={labelStyle}>레퍼런스 URL <span style={{ color: '#D4537E' }}>*필수</span></label>
-            <input
-              type="url"
-              inputMode="url"
-              value={form.referenceUrl || ''}
-              onChange={(e) => handleChange('referenceUrl', e.target.value)}
-              style={{ ...inputStyle, boxShadow: (form.referenceUrl && form.referenceUrl.trim()) ? 'none' : 'inset 0 0 0 1.5px #E7B7C6' }}
-              placeholder="참고할 링크를 붙여넣으세요 (필수)"
-            />
-          </div>
+          {/* 레퍼런스 URL — 저장은 선택, 발행 전 필요 */}
+          {(() => {
+            const hasRef = !!(form.referenceUrl && form.referenceUrl.trim());
+            return (
+              <div style={{ marginBottom: 8 }}>
+                <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                  레퍼런스 URL
+                  <span style={{ fontSize: 11, fontWeight: 500, color: hasRef ? '#3A7D3A' : '#B07D2B', background: hasRef ? '#E7F1E8' : '#FBF1DD', borderRadius: 5, padding: '2px 7px' }}>
+                    {hasRef ? '🔗 입력됨' : '발행 전 필요'}
+                  </span>
+                </label>
+                <input
+                  type="url"
+                  inputMode="url"
+                  value={form.referenceUrl || ''}
+                  onChange={(e) => handleChange('referenceUrl', e.target.value)}
+                  style={inputStyle}
+                  placeholder="참고할 링크 (지금 비워둬도 저장돼요)"
+                />
+                {!hasRef && (
+                  <div style={{ fontSize: 11.5, color: '#A8946A', marginTop: 6 }}>
+                    주제만 먼저 저장해도 돼요. <b>발행 완료</b>하려면 레퍼런스가 필요해요.
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* 더보기 토글 */}
           <button
