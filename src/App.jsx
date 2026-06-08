@@ -143,7 +143,7 @@ export default function App({ session }) {
   const userId = session.user.id;
   const userEmail = session.user.email;
 
-  const [currentMonth, setCurrentMonth] = useState('2026-05');
+  const [currentMonth, setCurrentMonth] = useState(todayYM);
   const [items, setItems] = useState([]);
   const [performance, setPerformance] = useState({});
   const [loading, setLoading] = useState(true);
@@ -1170,7 +1170,7 @@ export default function App({ session }) {
         )}
 
         {!loading && !error && viewMode === 'kpi' && (
-          <KPIView items={items} currentMonth={currentMonth} />
+          <KPIView items={items} performance={performance} currentMonth={currentMonth} />
         )}
 
         {selectedItem && (
@@ -2093,110 +2093,127 @@ const weekNavBtn = {
 // ============================================================
 // KPI 대시보드
 // ============================================================
-function KPIView({ items, currentMonth }) {
-  // 통계 계산
-  const total = items.length;
-  const completed = items.filter(it => it.completed).length;
-  const completionRate = total > 0 ? Math.round(completed / total * 100) : 0;
-
-  // 채널별 집계 — shortLabel 기준으로 그룹핑
-  const byShortLabel = {};
-  CHANNEL_OPTIONS.forEach(opt => {
-    const key = opt.shortLabel || opt.label;
-    if (!byShortLabel[key]) {
-      byShortLabel[key] = { shortLabel: key, total: 0, done: 0, color: COLORS[opt.value] || { bg: '#F0F0EB', fg: '#5F5E5A' } };
-    }
-  });
-  items.forEach(it => {
-    const opt = CHANNEL_OPTIONS.find(o => o.value === it.channel);
-    if (!opt) return;
-    const key = opt.shortLabel || opt.label;
-    if (byShortLabel[key]) {
-      byShortLabel[key].total += 1;
-      if (it.completed) byShortLabel[key].done += 1;
-    }
-  });
-  const channelStats = Object.values(byShortLabel).filter(c => c.total > 0).sort((a, b) => b.total - a.total);
-
-  // 핵심 vs 일반
-  const coreItems = items.filter(it => it.isCore);
-  const coreCompleted = coreItems.filter(it => it.completed).length;
-  const coreRate = coreItems.length > 0 ? Math.round(coreCompleted / coreItems.length * 100) : 0;
-
-  // 주차별 발행 분포 (월간)
+function KPIView({ items, performance, currentMonth }) {
   const [yearStr, monthStr] = currentMonth.split('-');
   const yearNum = parseInt(yearStr, 10);
   const monthNum = parseInt(monthStr, 10);
   const lastDay = new Date(yearNum, monthNum, 0).getDate();
-  const weeksData = [
-    { label: '1주차', range: '1~7일', total: 0, done: 0 },
-    { label: '2주차', range: '8~14일', total: 0, done: 0 },
-    { label: '3주차', range: '15~21일', total: 0, done: 0 },
-    { label: '4주차', range: '22~28일', total: 0, done: 0 },
-    { label: '5주차', range: `29~${lastDay}일`, total: 0, done: 0 }
-  ];
-  items.forEach(it => {
-    const day = parseInt(it.date.split('-')[2], 10);
-    let weekIdx;
-    if (day <= 7) weekIdx = 0;
-    else if (day <= 14) weekIdx = 1;
-    else if (day <= 21) weekIdx = 2;
-    else if (day <= 28) weekIdx = 3;
-    else weekIdx = 4;
-    weeksData[weekIdx].total += 1;
-    if (it.completed) weeksData[weekIdx].done += 1;
+
+  // 이번 달 콘텐츠만 (월간 그리드는 6주라 이웃 달이 섞일 수 있음)
+  const monthItems = items.filter(it => {
+    const p = (it.date || '').split('-');
+    return parseInt(p[0], 10) === yearNum && parseInt(p[1], 10) === monthNum;
   });
 
-  // 발행 후 기록은 별도 테이블 — 여기선 표시 안 함 (TODO: 추후 join)
+  const total = monthItems.length;
+  const completed = monthItems.filter(it => it.completed).length;
+  const rate = total > 0 ? Math.round(completed / total * 100) : 0;
+  const coreItems = monthItems.filter(it => it.isCore);
+  const coreDone = coreItems.filter(it => it.completed).length;
+  const coreRate = coreItems.length > 0 ? Math.round(coreDone / coreItems.length * 100) : 0;
+
+  // 채널별 발행률
+  const byCh = {};
+  monthItems.forEach(it => {
+    const opt = CHANNEL_OPTIONS.find(o => o.value === it.channel);
+    const key = it.channel || '_';
+    if (!byCh[key]) byCh[key] = {
+      name: opt ? (opt.shortLabel || opt.label) : (it.channelName || '기타'),
+      color: COLORS[it.channel] || { bg: '#F0F0EB', fg: '#5F5E5A' },
+      total: 0, done: 0
+    };
+    byCh[key].total += 1;
+    if (it.completed) byCh[key].done += 1;
+  });
+  const channelStats = Object.values(byCh).sort((a, b) => b.total - a.total);
+
+  // 참여 지표 (좋아요·저장) — performance 테이블
+  let totalLikes = 0, totalSaves = 0;
+  const perfRows = [];
+  monthItems.forEach(it => {
+    const p = performance && performance[it.id];
+    if (!p) return;
+    const likes = parseInt(p.likes, 10) || 0;
+    const saves = parseInt(p.saves, 10) || 0;
+    if (likes || saves || p.url) {
+      totalLikes += likes; totalSaves += saves;
+      perfRows.push({ it, likes, saves });
+    }
+  });
+  const hasEngagement = perfRows.length > 0;
+  const topPosts = [...perfRows].sort((a, b) => (b.likes + b.saves) - (a.likes + a.saves)).slice(0, 3);
+
+  // 주차별 발행 분포
+  const weeksData = [
+    { label: '1주', range: '1~7', total: 0, done: 0 },
+    { label: '2주', range: '8~14', total: 0, done: 0 },
+    { label: '3주', range: '15~21', total: 0, done: 0 },
+    { label: '4주', range: '22~28', total: 0, done: 0 },
+    { label: '5주', range: `29~${lastDay}`, total: 0, done: 0 }
+  ];
+  monthItems.forEach(it => {
+    const day = parseInt(it.date.split('-')[2], 10);
+    const wi = day <= 7 ? 0 : day <= 14 ? 1 : day <= 21 ? 2 : day <= 28 ? 3 : 4;
+    weeksData[wi].total += 1;
+    if (it.completed) weeksData[wi].done += 1;
+  });
 
   if (total === 0) {
     return (
-      <div style={{ background: '#FFFFFF', borderRadius: 12, padding: 60, textAlign: 'center', color: '#888780', fontSize: 14 }}>
-        이번 달에 등록된 콘텐츠가 없어요.<br />
-        <span style={{ fontSize: 12, marginTop: 8, display: 'inline-block' }}>+ 새 콘텐츠 버튼으로 추가하세요.</span>
+      <div style={{ background: '#FFFFFF', borderRadius: 16, padding: '56px 24px', textAlign: 'center', color: '#888780' }}>
+        <div style={{ fontSize: 32, marginBottom: 10 }}>📭</div>
+        <div style={{ fontSize: 15, color: '#5F5E5A', fontWeight: 500 }}>{monthNum}월에 등록된 콘텐츠가 없어요</div>
+        <div style={{ fontSize: 13, marginTop: 6 }}>＋ 새 콘텐츠로 일정을 추가해 보세요</div>
       </div>
     );
   }
 
+  const rateColor = rate >= 70 ? '#3A7D3A' : rate >= 40 ? '#C79A2E' : '#D4537E';
+  const R = 54, SW = 13, C = 2 * Math.PI * R;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {/* 핵심 지표 4종 */}
-      <div className="kpi-cards">
-        <KpiCard label="이번 달 콘텐츠" value={`${total}편`} sub={`핵심 ${coreItems.length}편`} />
-        <KpiCard label="발행 완료" value={`${completed}편`} sub={`${completionRate}%`} accent={completionRate >= 50 ? '#3A7D3A' : '#5F5E5A'} />
-        <KpiCard label="미발행" value={`${total - completed}편`} sub={`${100 - completionRate}%`} accent={total - completed > 0 ? '#D4537E' : '#5F5E5A'} />
-        <KpiCard label="핵심 발행률" value={`${coreRate}%`} sub={`${coreCompleted}/${coreItems.length}편`} accent="#D4A92E" />
+      {/* 히어로: 발행률 도넛 + 요약 */}
+      <div className="kpi-card-full" style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', width: 140, height: 140, flexShrink: 0, margin: '0 auto' }}>
+          <svg width="140" height="140" viewBox="0 0 140 140">
+            <circle cx="70" cy="70" r={R} fill="none" stroke="#ECE9E0" strokeWidth={SW} />
+            <circle cx="70" cy="70" r={R} fill="none" stroke={rateColor} strokeWidth={SW} strokeLinecap="round"
+              strokeDasharray={C} strokeDashoffset={C * (1 - rate / 100)}
+              transform="rotate(-90 70 70)" style={{ transition: 'stroke-dashoffset 0.6s ease' }} />
+          </svg>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontSize: 30, fontWeight: 700, color: '#1A1A1A', lineHeight: 1 }}>{rate}%</span>
+            <span style={{ fontSize: 12, color: '#888780', marginTop: 4 }}>발행률</span>
+          </div>
+        </div>
+        <div style={{ flex: 1, minWidth: 200, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
+          <HeroStat label="전체 콘텐츠" value={total} unit="편" />
+          <HeroStat label="발행 완료" value={completed} unit="편" color="#3A7D3A" />
+          <HeroStat label="미발행" value={total - completed} unit="편" color={(total - completed) > 0 ? '#D4537E' : '#888780'} />
+          <HeroStat label="핵심 발행률" value={coreRate} unit="%" color="#C79A2E" sub={`${coreDone}/${coreItems.length}편`} />
+        </div>
       </div>
 
-      {/* 발행률 막대 */}
+      {/* 채널별 발행률 */}
       <div className="kpi-card-full">
-        <div className="kpi-card-title">전체 발행률</div>
-        <div className="kpi-bar-track">
-          <div className="kpi-bar-fill" style={{ width: `${completionRate}%`, background: completionRate >= 70 ? '#3A7D3A' : completionRate >= 40 ? '#D4A92E' : '#D4537E' }} />
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#888780', marginTop: 6 }}>
-          <span>{completed}편 발행</span>
-          <span>{completionRate}%</span>
-        </div>
-      </div>
-
-      {/* 채널별 */}
-      <div className="kpi-card-full">
-        <div className="kpi-card-title">채널별 발행 현황</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {channelStats.map(ch => {
-            const rate = ch.total > 0 ? Math.round(ch.done / ch.total * 100) : 0;
+        <div className="kpi-card-title">채널별 발행률</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {channelStats.map((ch, i) => {
+            const r = ch.total > 0 ? Math.round(ch.done / ch.total * 100) : 0;
             return (
-              <div key={ch.shortLabel}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                    <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: ch.color.fg || '#5F5E5A', flexShrink: 0 }} />
-                    <span style={{ fontSize: 13, color: '#1A1A1A', fontWeight: 500 }}>{ch.shortLabel}</span>
+              <div key={i}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                    <span style={{ width: 11, height: 11, borderRadius: 3, background: ch.color.fg, flexShrink: 0 }} />
+                    <span style={{ fontSize: 13.5, color: '#1A1A1A', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch.name}</span>
                   </div>
-                  <span style={{ fontSize: 12, color: '#5F5E5A' }}>{ch.done}/{ch.total}편 · {rate}%</span>
+                  <span style={{ fontSize: 12.5, color: '#5F5E5A', flexShrink: 0 }}>
+                    <b style={{ color: '#1A1A1A' }}>{r}%</b> · {ch.done}/{ch.total}편
+                  </span>
                 </div>
-                <div className="kpi-bar-track">
-                  <div className="kpi-bar-fill" style={{ width: `${Math.max(rate, rate > 0 ? 2 : 0)}%`, background: ch.color.fg || '#5F5E5A' }} />
+                <div style={{ height: 9, background: '#EFEDE6', borderRadius: 5, overflow: 'hidden' }}>
+                  <div style={{ width: `${r}%`, height: '100%', background: ch.color.fg, borderRadius: 5, transition: 'width 0.5s ease' }} />
                 </div>
               </div>
             );
@@ -2204,7 +2221,37 @@ function KPIView({ items, currentMonth }) {
         </div>
       </div>
 
-      {/* 주차별 */}
+      {/* 참여 지표 */}
+      {hasEngagement && (
+        <div className="kpi-card-full">
+          <div className="kpi-card-title">참여 지표</div>
+          <div style={{ display: 'flex', gap: 10, marginBottom: topPosts.length ? 18 : 0, flexWrap: 'wrap' }}>
+            <EngChip emoji="❤️" label="총 좋아요" value={totalLikes} />
+            <EngChip emoji="🔖" label="총 저장" value={totalSaves} />
+            <EngChip emoji="📊" label="기록된 콘텐츠" value={perfRows.length} unit="편" />
+          </div>
+          {topPosts.length > 0 && (
+            <div>
+              <div style={{ fontSize: 12, color: '#888780', marginBottom: 8 }}>인기 콘텐츠 TOP {topPosts.length}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                {topPosts.map((p, i) => {
+                  const c = COLORS[p.it.channel] || { bg: '#F0F0EB', fg: '#5F5E5A' };
+                  return (
+                    <div key={p.it.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ width: 18, fontSize: 13, fontWeight: 700, color: '#C79A2E', flexShrink: 0, textAlign: 'center' }}>{i + 1}</span>
+                      <span style={{ width: 8, height: 8, borderRadius: 2, background: c.fg, flexShrink: 0 }} />
+                      <span style={{ flex: 1, fontSize: 13, color: '#1A1A1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.it.title}</span>
+                      <span style={{ fontSize: 12, color: '#5F5E5A', flexShrink: 0, whiteSpace: 'nowrap' }}>❤️ {p.likes} · 🔖 {p.saves}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 주차별 발행 분포 */}
       <div className="kpi-card-full">
         <div className="kpi-card-title">주차별 발행 분포</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -2214,44 +2261,56 @@ function KPIView({ items, currentMonth }) {
             const doneWidth = w.total > 0 ? Math.round((w.done / w.total) * barWidth) : 0;
             return (
               <div key={w.label} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ width: 42, flexShrink: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: '#1A1A1A' }}>{w.label}</div>
-                  <div style={{ fontSize: 10, color: '#888780' }}>{w.range}</div>
+                <div style={{ width: 38, flexShrink: 0 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 600, color: '#1A1A1A' }}>{w.label}</div>
+                  <div style={{ fontSize: 10, color: '#A8A69E' }}>{w.range}</div>
                 </div>
-                <div style={{ flex: 1, position: 'relative', height: 28, background: '#F0EFE9', borderRadius: 6, overflow: 'hidden' }}>
-                  <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${barWidth}%`, background: '#D8D3C8', borderRadius: 6, transition: 'width 0.4s' }} />
-                  {doneWidth > 0 && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${doneWidth}%`, background: '#8B7355', borderRadius: 6, transition: 'width 0.4s' }} />}
+                <div style={{ flex: 1, position: 'relative', height: 26, background: '#F0EFE9', borderRadius: 6, overflow: 'hidden' }}>
+                  <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: `${barWidth}%`, background: '#DCD6CA', borderRadius: 6, transition: 'width 0.5s' }} />
+                  {doneWidth > 0 && <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: `${doneWidth}%`, background: rateColor, borderRadius: 6, transition: 'width 0.5s' }} />}
                 </div>
-                <div style={{ width: 48, textAlign: 'right', flexShrink: 0 }}>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: '#1A1A1A' }}>{w.total}</span>
-                  <span style={{ fontSize: 11, color: '#888780' }}>편</span>
-                  {w.done > 0 && <div style={{ fontSize: 10, color: '#3A7D3A', fontWeight: 500 }}>✓ {w.done}</div>}
+                <div style={{ width: 40, textAlign: 'right', flexShrink: 0, fontSize: 13, color: '#1A1A1A' }}>
+                  <b>{w.total}</b><span style={{ fontSize: 11, color: '#888780' }}>편</span>
                 </div>
               </div>
             );
           })}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 14, paddingTop: 12, borderTop: '0.5px solid rgba(0,0,0,0.07)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ width: 10, height: 10, borderRadius: 3, background: '#D8D3C8', display: 'inline-block' }} />
-            <span style={{ fontSize: 11, color: '#888780' }}>미발행</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ width: 10, height: 10, borderRadius: 3, background: '#8B7355', display: 'inline-block' }} />
-            <span style={{ fontSize: 11, color: '#888780' }}>발행 완료</span>
-          </div>
+        <div style={{ display: 'flex', gap: 14, marginTop: 14, paddingTop: 12, borderTop: '0.5px solid rgba(0,0,0,0.07)' }}>
+          <Legend color="#DCD6CA" label="계획" />
+          <Legend color={rateColor} label="발행 완료" />
         </div>
       </div>
     </div>
   );
 }
 
-function KpiCard({ label, value, sub, accent }) {
+function HeroStat({ label, value, unit, color, sub }) {
   return (
-    <div className="kpi-card">
-      <div className="kpi-card-label">{label}</div>
-      <div className="kpi-card-value" style={{ color: accent || '#1A1A1A' }}>{value}</div>
-      {sub && <div className="kpi-card-sub" style={{ color: accent || '#888780' }}>{sub}</div>}
+    <div>
+      <div style={{ fontSize: 12, color: '#888780', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 700, color: color || '#1A1A1A', lineHeight: 1.1 }}>
+        {value}<span style={{ fontSize: 13, fontWeight: 500, marginLeft: 1 }}>{unit}</span>
+      </div>
+      {sub && <div style={{ fontSize: 11, color: '#A8A69E', marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function EngChip({ emoji, label, value, unit }) {
+  return (
+    <div style={{ flex: '1 1 90px', background: '#FAF9F5', borderRadius: 12, padding: '12px 14px' }}>
+      <div style={{ fontSize: 12, color: '#888780', marginBottom: 4 }}>{emoji} {label}</div>
+      <div style={{ fontSize: 20, fontWeight: 700, color: '#1A1A1A' }}>{value.toLocaleString()}<span style={{ fontSize: 12, fontWeight: 500, color: '#888780', marginLeft: 2 }}>{unit || ''}</span></div>
+    </div>
+  );
+}
+
+function Legend({ color, label }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+      <span style={{ width: 10, height: 10, borderRadius: 3, background: color, display: 'inline-block' }} />
+      <span style={{ fontSize: 11, color: '#888780' }}>{label}</span>
     </div>
   );
 }
