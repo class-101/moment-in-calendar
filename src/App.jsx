@@ -34,6 +34,11 @@ const CHANNEL_COLOR_PRESETS = [
   { bg: '#ECE8F2', fg: '#574A78' }
 ];
 
+// 채널 유형(플랫폼) — 채널 관리에서 드롭다운으로 선택, KPI에서 구분 표시
+const CHANNEL_TYPES = ['인스타그램', '블로그', '오늘의집', '핀터레스트', '유튜브', '틱톡', '스레드', '기타'];
+const TYPE_EMOJI = { '인스타그램': '📷', '블로그': '✍️', '오늘의집': '🏠', '핀터레스트': '📌', '유튜브': '▶️', '틱톡': '🎵', '스레드': '🧵', '기타': '🔖' };
+const typeEmoji = (t) => TYPE_EMOJI[t] || '🔖';
+
 let COLORS = Object.fromEntries(DEFAULT_CHANNELS.map(c => [c.value, { bg: c.bg, fg: c.fg }]));
 let CHANNEL_OPTIONS = DEFAULT_CHANNELS.map(c => ({ value: c.value, label: c.label, shortLabel: c.shortLabel, skill: c.skill }));
 
@@ -1170,7 +1175,7 @@ export default function App({ session }) {
         )}
 
         {!loading && !error && viewMode === 'kpi' && (
-          <KPIView items={items} performance={performance} currentMonth={currentMonth} />
+          <KPIView items={items} performance={performance} channels={channels} currentMonth={currentMonth} />
         )}
 
         {selectedItem && (
@@ -1385,6 +1390,11 @@ const chFieldStyle = {
   boxSizing: 'border-box', outline: 'none', color: '#1A1A1A'
 };
 const chMiniLabel = { fontSize: 11, color: '#888780', marginBottom: 4, display: 'block' };
+const chSelectStyle = {
+  ...chFieldStyle, cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none', paddingRight: 30,
+  backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4 L6 8 L10 4' stroke='%235F5E5A' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>\")",
+  backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center'
+};
 
 // 색상 선택기: 프리셋 + 직접 선택(배경/글자) + 배경 자동
 function ColorEditor({ color, onChange }) {
@@ -1438,32 +1448,41 @@ function ChannelRow({ ch, index, total, onUpdate, onDelete, onMove }) {
     color: disabled ? '#CFCDC5' : '#888780', fontSize: 11, lineHeight: 1, padding: 0, height: 13
   });
 
+  const typeValue = CHANNEL_TYPES.includes(shortLabel) ? shortLabel : (shortLabel ? '기타' : '');
+
   return (
-    <div style={{ background: '#FAF9F5', borderRadius: 12, padding: 12, display: 'flex', flexDirection: 'column', gap: open ? 12 : 0 }}>
+    <div style={{ background: '#FAF9F5', borderRadius: 12, padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', flexShrink: 0 }}>
           <button type="button" disabled={index === 0} onClick={() => onMove(ch.value, -1)} style={arrowBtn(index === 0)} title="위로">▲</button>
           <button type="button" disabled={index === total - 1} onClick={() => onMove(ch.value, 1)} style={arrowBtn(index === total - 1)} title="아래로">▼</button>
         </div>
-        <button type="button" onClick={() => setOpen(o => !o)} title="색상·옵션"
+        <button type="button" onClick={() => setOpen(o => !o)} title="색상 변경"
           style={{ width: 24, height: 24, borderRadius: 7, background: color.bg, border: `2px solid ${color.fg}`, cursor: 'pointer', flexShrink: 0 }} />
         <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="채널 이름" style={{ ...chFieldStyle, fontWeight: 500 }} />
         <button type="button" onClick={() => onDelete(ch.value)} title="삭제"
           style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 15, color: '#C0392B', padding: '4px 4px', flexShrink: 0 }}>🗑️</button>
       </div>
 
+      {/* 유형 — 항상 보임 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 30 }}>
+        <span style={{ fontSize: 12, color: '#888780', flexShrink: 0 }}>유형</span>
+        <select value={typeValue} onChange={(e) => setShortLabel(e.target.value)} style={{ ...chSelectStyle, maxWidth: 200 }}>
+          {!typeValue && <option value="">선택</option>}
+          {CHANNEL_TYPES.map(t => <option key={t} value={t}>{typeEmoji(t)} {t}</option>)}
+        </select>
+        <button type="button" onClick={() => setOpen(o => !o)}
+          style={{ marginLeft: 'auto', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 12, color: '#888780', fontFamily: 'inherit', flexShrink: 0 }}>
+          {open ? '접기 ▲' : '색상·스킬 ▼'}
+        </button>
+      </div>
+
       {open && (
         <>
           <ColorEditor color={color} onChange={setColor} />
-          <div style={{ display: 'flex', gap: 8 }}>
-            <div style={{ flex: 1 }}>
-              <label style={chMiniLabel}>짧은 이름</label>
-              <input value={shortLabel} onChange={(e) => setShortLabel(e.target.value)} placeholder={label || '예: 블로그'} style={chFieldStyle} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <label style={chMiniLabel}>작성 스킬</label>
-              <input value={skill} onChange={(e) => setSkill(e.target.value)} placeholder="선택" style={chFieldStyle} />
-            </div>
+          <div>
+            <label style={chMiniLabel}>작성 스킬 (선택)</label>
+            <input value={skill} onChange={(e) => setSkill(e.target.value)} placeholder="예: momentin-insta-writer" style={chFieldStyle} />
           </div>
         </>
       )}
@@ -1513,7 +1532,10 @@ function ChannelManagerModal({ channels, onClose, onAdd, onUpdate, onDelete, onM
             <div style={{ background: '#FAF5E8', border: '0.5px solid #E5DCC4', borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
               <input autoFocus value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="채널 이름 (예: 유튜브 쇼츠)" style={{ ...chFieldStyle, fontWeight: 500 }} />
               <div style={{ display: 'flex', gap: 8 }}>
-                <input value={newShort} onChange={(e) => setNewShort(e.target.value)} placeholder="짧은 이름 (선택)" style={chFieldStyle} />
+                <select value={newShort} onChange={(e) => setNewShort(e.target.value)} style={chSelectStyle}>
+                  <option value="">유형 선택</option>
+                  {CHANNEL_TYPES.map(t => <option key={t} value={t}>{typeEmoji(t)} {t}</option>)}
+                </select>
                 <input value={newSkill} onChange={(e) => setNewSkill(e.target.value)} placeholder="작성 스킬 (선택)" style={chFieldStyle} />
               </div>
               <ColorEditor color={newColor} onChange={setNewColor} />
@@ -2093,7 +2115,7 @@ const weekNavBtn = {
 // ============================================================
 // KPI 대시보드
 // ============================================================
-function KPIView({ items, performance, currentMonth }) {
+function KPIView({ items, performance, channels, currentMonth }) {
   const [yearStr, monthStr] = currentMonth.split('-');
   const yearNum = parseInt(yearStr, 10);
   const monthNum = parseInt(monthStr, 10);
@@ -2112,20 +2134,39 @@ function KPIView({ items, performance, currentMonth }) {
   const coreDone = coreItems.filter(it => it.completed).length;
   const coreRate = coreItems.length > 0 ? Math.round(coreDone / coreItems.length * 100) : 0;
 
-  // 채널별 발행률
+  // 채널별 발행률 — 채널 설정(추가·삭제·유형)에 연동
+  const chList = (channels && channels.length ? channels : CHANNEL_OPTIONS);
   const byCh = {};
-  monthItems.forEach(it => {
-    const opt = CHANNEL_OPTIONS.find(o => o.value === it.channel);
-    const key = it.channel || '_';
-    if (!byCh[key]) byCh[key] = {
-      name: opt ? (opt.shortLabel || opt.label) : (it.channelName || '기타'),
-      color: COLORS[it.channel] || { bg: '#F0F0EB', fg: '#5F5E5A' },
+  chList.forEach(c => {
+    byCh[c.value] = {
+      value: c.value,
+      name: c.label,
+      type: c.shortLabel || '',
+      color: COLORS[c.value] || { bg: '#F0F0EB', fg: '#5F5E5A' },
       total: 0, done: 0
     };
-    byCh[key].total += 1;
-    if (it.completed) byCh[key].done += 1;
   });
+  monthItems.forEach(it => {
+    // 설정에 없는(삭제된) 채널이면 즉석으로 추가해 표시
+    if (!byCh[it.channel]) byCh[it.channel] = {
+      value: it.channel, name: it.channelName || '기타', type: '',
+      color: COLORS[it.channel] || { bg: '#F0F0EB', fg: '#5F5E5A' }, total: 0, done: 0
+    };
+    byCh[it.channel].total += 1;
+    if (it.completed) byCh[it.channel].done += 1;
+  });
+  // 콘텐츠 많은 순 → 없는 채널은 뒤로
   const channelStats = Object.values(byCh).sort((a, b) => b.total - a.total);
+
+  // 유형별 집계
+  const byType = {};
+  channelStats.forEach(ch => {
+    const t = ch.type || '기타';
+    if (!byType[t]) byType[t] = { type: t, total: 0, done: 0 };
+    byType[t].total += ch.total;
+    byType[t].done += ch.done;
+  });
+  const typeStats = Object.values(byType).filter(t => t.total > 0).sort((a, b) => b.total - a.total);
 
   // 참여 지표 (좋아요·저장) — performance 테이블
   let totalLikes = 0, totalSaves = 0;
@@ -2195,21 +2236,42 @@ function KPIView({ items, performance, currentMonth }) {
         </div>
       </div>
 
+      {/* 유형별 발행 (인스타/블로그 등) */}
+      {typeStats.length > 1 && (
+        <div className="kpi-card-full">
+          <div className="kpi-card-title">유형별 발행</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {typeStats.map(t => {
+              const tr = t.total > 0 ? Math.round(t.done / t.total * 100) : 0;
+              return (
+                <div key={t.type} style={{ flex: '1 1 100px', background: '#FAF9F5', borderRadius: 12, padding: '12px 14px' }}>
+                  <div style={{ fontSize: 12.5, color: '#5F5E5A', marginBottom: 5 }}>{typeEmoji(t.type)} {t.type}</div>
+                  <div style={{ fontSize: 19, fontWeight: 700, color: '#1A1A1A', lineHeight: 1 }}>{tr}<span style={{ fontSize: 12, fontWeight: 500 }}>%</span></div>
+                  <div style={{ fontSize: 11, color: '#A8A69E', marginTop: 3 }}>{t.done}/{t.total}편 발행</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* 채널별 발행률 */}
       <div className="kpi-card-full">
         <div className="kpi-card-title">채널별 발행률</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {channelStats.map((ch, i) => {
             const r = ch.total > 0 ? Math.round(ch.done / ch.total * 100) : 0;
+            const muted = ch.total === 0;
             return (
-              <div key={i}>
+              <div key={ch.value || i} style={{ opacity: muted ? 0.5 : 1 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                     <span style={{ width: 11, height: 11, borderRadius: 3, background: ch.color.fg, flexShrink: 0 }} />
                     <span style={{ fontSize: 13.5, color: '#1A1A1A', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch.name}</span>
+                    {ch.type && <span style={{ fontSize: 11, color: '#888780', background: '#EEEBE3', borderRadius: 5, padding: '2px 7px', flexShrink: 0, whiteSpace: 'nowrap' }}>{typeEmoji(ch.type)} {ch.type}</span>}
                   </div>
                   <span style={{ fontSize: 12.5, color: '#5F5E5A', flexShrink: 0 }}>
-                    <b style={{ color: '#1A1A1A' }}>{r}%</b> · {ch.done}/{ch.total}편
+                    {ch.total > 0 ? <><b style={{ color: '#1A1A1A' }}>{r}%</b> · {ch.done}/{ch.total}편</> : '0편'}
                   </span>
                 </div>
                 <div style={{ height: 9, background: '#EFEDE6', borderRadius: 5, overflow: 'hidden' }}>
