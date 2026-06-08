@@ -1373,7 +1373,16 @@ function DetailModal({ item, performance, onClose, onToggleCompleted, onUpdatePe
         </div>
 
         <div style={{ padding: '0 22px 4px', borderTop: '0.5px solid rgba(0,0,0,0.06)', paddingTop: 12 }}>
-          {item.referenceUrl && <InfoRow label="레퍼런스" value={<a href={item.referenceUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#3A6B9E', wordBreak: 'break-all', textDecoration: 'underline' }}>{item.referenceUrl}</a>} />}
+          {item.referenceUrl && item.referenceUrl.trim() && (
+            <InfoRow label="레퍼런스" value={
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {item.referenceUrl.split(/\r?\n/).map(u => u.trim()).filter(Boolean).map((u, i) => {
+                  const href = /^https?:\/\//i.test(u) ? u : `https://${u}`;
+                  return <a key={i} href={href} target="_blank" rel="noopener noreferrer" style={{ color: '#3A6B9E', wordBreak: 'break-all', textDecoration: 'underline' }}>{u}</a>;
+                })}
+              </div>
+            } />
+          )}
           {item.mainKeyword && <InfoRow label="메인 키워드" value={<div><div>{item.mainKeyword}</div>{item.strength && <div style={{ color: '#888780', fontSize: 12, marginTop: 2 }}>{item.strength}</div>}</div>} />}
           {item.asset && <InfoRow label="자산" value={item.asset} />}
           {item.nextSkill && <InfoRow label="작성 스킬" value={<code style={{ background: '#F8F8F6', padding: '2px 8px', borderRadius: 4, fontSize: 12, color: '#5F5E5A', fontFamily: 'ui-monospace, monospace', overflowWrap: 'anywhere' }}>{item.nextSkill}</code>} />}
@@ -1718,19 +1727,16 @@ function EditModal({ item, onSave, onClose }) {
                     {hasRef ? '🔗 입력됨' : '발행 전 필요'}
                   </span>
                 </label>
-                <input
-                  type="url"
-                  inputMode="url"
+                <textarea
                   value={form.referenceUrl || ''}
                   onChange={(e) => handleChange('referenceUrl', e.target.value)}
-                  style={inputStyle}
-                  placeholder="참고할 링크 (지금 비워둬도 저장돼요)"
+                  rows={3}
+                  style={{ ...inputStyle, resize: 'vertical', minHeight: 64, lineHeight: 1.5 }}
+                  placeholder={'참고할 링크 (지금 비워둬도 저장돼요)\n여러 개면 한 줄에 하나씩'}
                 />
-                {!hasRef && (
-                  <div style={{ fontSize: 11.5, color: '#A8946A', marginTop: 6 }}>
-                    주제만 먼저 저장해도 돼요. <b>발행 완료</b>하려면 레퍼런스가 필요해요.
-                  </div>
-                )}
+                <div style={{ fontSize: 11.5, color: '#A8946A', marginTop: 6 }}>
+                  {hasRef ? '여러 개면 한 줄에 하나씩 적어주세요.' : <>주제만 먼저 저장해도 돼요. <b>발행 완료</b>하려면 레퍼런스가 필요해요.</>}
+                </div>
               </div>
             );
           })()}
