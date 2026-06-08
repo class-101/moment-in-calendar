@@ -384,7 +384,7 @@ export default function App({ session }) {
 
   const saveItem = async (item) => {
     try {
-      const isNew = !items.find(i => i.id === item.id);
+      const isNew = !item.id;
       const finalItem = { ...item, id: item.id || `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` };
       const dbRow = itemToDb(finalItem, userId);
 
@@ -603,10 +603,14 @@ export default function App({ session }) {
     setPerformance(prev => ({ ...prev, [itemId]: { ...(prev[itemId] || {}), [field]: value } }));
   };
 
+  // 현재 로드된 items를 ref로 추적 (performance 자동저장이 items 변경마다 재실행되지 않도록)
+  const itemsRef = useRef(items);
+  useEffect(() => { itemsRef.current = items; }, [items]);
+
   useEffect(() => {
     const timer = setTimeout(async () => {
       for (const [itemId, perf] of Object.entries(performance)) {
-        if (!items.find(i => i.id === itemId)) continue;
+        if (!itemsRef.current.find(i => i.id === itemId)) continue;
         try {
           await supabase.from('performance').upsert({
             item_id: itemId,
@@ -622,7 +626,7 @@ export default function App({ session }) {
       }
     }, 1500);
     return () => clearTimeout(timer);
-  }, [performance, userId, items]);
+  }, [performance, userId]);
 
   // 필터 적용
   const applyFilters = (allItems) => {
@@ -929,6 +933,9 @@ export default function App({ session }) {
         .modal-content.edit-modal { max-width: 620px; }
         @media (min-width: 1024px) { .modal-content.edit-modal { max-width: 720px; } }
         @media (max-width: 640px) { .modal-content.edit-modal { max-width: 100%; } }
+        /* 상세 모달 */
+        .modal-content.detail-modal { max-width: 560px; }
+        @media (max-width: 640px) { .modal-content.detail-modal { max-width: 100%; } }
       `}</style>
 
       <div style={{ maxWidth: 1100, margin: '0 auto', paddingBottom: selectMode ? 80 : 0 }}>
@@ -1015,29 +1022,16 @@ export default function App({ session }) {
               <div className="filter-section-label">채널</div>
               <div className="filter-chips">
                 {(() => {
-                  const seen = new Set();
-                  return CHANNEL_OPTIONS.filter(opt => {
-                    if (seen.has(opt.shortLabel)) return false;
-                    seen.add(opt.shortLabel);
-                    return true;
-                  }).map(opt => {
-                    const sameGroup = CHANNEL_OPTIONS.filter(o => o.shortLabel === opt.shortLabel);
+                  return CHANNEL_OPTIONS.map(opt => {
                     const c = COLORS[opt.value] || { bg: '#F0F0EB', fg: '#1A1A1A' };
-                    const active = sameGroup.some(o => filterChannels.has(o.value));
+                    const active = filterChannels.has(opt.value);
                     return (
                       <button
-                        key={opt.shortLabel}
-                        onClick={() => {
-                          setFilterChannels(prev => {
-                            const next = new Set(prev);
-                            if (active) sameGroup.forEach(o => next.delete(o.value));
-                            else sameGroup.forEach(o => next.add(o.value));
-                            return next;
-                          });
-                        }}
+                        key={opt.value}
+                        onClick={() => toggleChannelFilter(opt.value)}
                         className={`filter-chip ${active ? 'active' : ''}`}
                         style={active ? { background: c.bg, color: c.fg, borderColor: c.fg } : {}}
-                      >{opt.shortLabel}</button>
+                      >{opt.label}</button>
                     );
                   });
                 })()}
@@ -1201,6 +1195,7 @@ export default function App({ session }) {
 
         {!loading && !error && viewMode === 'list' && (
           <ListView
+            key={currentMonth}
             items={filteredItems}
             currentMonth={currentMonth}
             holidays={HOLIDAYS}
@@ -1346,7 +1341,7 @@ function DetailModal({ item, performance, onClose, onToggleCompleted, onUpdatePe
   const channelColor = COLORS[item.channel]?.bg || '#888780';
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ padding: 0, overflow: 'hidden' }}>
+      <div className="modal-content detail-modal" onClick={(e) => e.stopPropagation()} style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 12px 12px 16px', borderBottom: '0.5px solid rgba(0,0,0,0.06)' }}>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: 22, cursor: 'pointer', color: '#1A1A1A', padding: 4, lineHeight: 1 }}>×</button>
           <div style={{ position: 'relative' }}>
@@ -1381,8 +1376,8 @@ function DetailModal({ item, performance, onClose, onToggleCompleted, onUpdatePe
           {item.referenceUrl && <InfoRow label="레퍼런스" value={<a href={item.referenceUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#3A6B9E', wordBreak: 'break-all', textDecoration: 'underline' }}>{item.referenceUrl}</a>} />}
           {item.mainKeyword && <InfoRow label="메인 키워드" value={<div><div>{item.mainKeyword}</div>{item.strength && <div style={{ color: '#888780', fontSize: 12, marginTop: 2 }}>{item.strength}</div>}</div>} />}
           {item.asset && <InfoRow label="자산" value={item.asset} />}
-          {item.nextSkill && <InfoRow label="작성 스킬" value={<code style={{ background: '#F8F8F6', padding: '2px 8px', borderRadius: 4, fontSize: 12, color: '#5F5E5A', fontFamily: 'ui-monospace, monospace' }}>{item.nextSkill}</code>} />}
-          {item.description && <InfoRow label="메모" value={<div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{item.description}</div>} />}
+          {item.nextSkill && <InfoRow label="작성 스킬" value={<code style={{ background: '#F8F8F6', padding: '2px 8px', borderRadius: 4, fontSize: 12, color: '#5F5E5A', fontFamily: 'ui-monospace, monospace', overflowWrap: 'anywhere' }}>{item.nextSkill}</code>} />}
+          {item.description && <InfoRow label="메모" value={<div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5, overflowWrap: 'anywhere' }}>{item.description}</div>} />}
         </div>
 
         <div style={{ padding: '12px 22px 16px', borderTop: '0.5px solid rgba(0,0,0,0.06)', marginTop: 12 }}>
@@ -1432,8 +1427,8 @@ const recordInputStyle = {
 function InfoRow({ label, value }) {
   return (
     <div style={{ display: 'flex', gap: 16, padding: '8px 0', alignItems: 'flex-start', fontSize: 14 }}>
-      <div style={{ width: 80, flexShrink: 0, color: '#888780', fontSize: 12, paddingTop: 2 }}>{label}</div>
-      <div style={{ flex: 1, color: '#1A1A1A', lineHeight: 1.5, wordBreak: 'keep-all' }}>{value}</div>
+      <div style={{ width: 72, flexShrink: 0, color: '#888780', fontSize: 12, paddingTop: 2 }}>{label}</div>
+      <div style={{ flex: 1, minWidth: 0, color: '#1A1A1A', lineHeight: 1.5, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{value}</div>
     </div>
   );
 }
