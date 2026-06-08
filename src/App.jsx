@@ -901,6 +901,11 @@ export default function App({ session }) {
           .user-email { display: none; }
           .week-cell { min-height: 200px; padding: 6px 4px; }
         }
+
+        /* 콘텐츠 작성/수정 모달 — 태블릿·웹에서 넓게, 모바일은 하단 시트 풀폭 */
+        .modal-content.edit-modal { max-width: 620px; }
+        @media (min-width: 1024px) { .modal-content.edit-modal { max-width: 720px; } }
+        @media (max-width: 640px) { .modal-content.edit-modal { max-width: 100%; } }
       `}</style>
 
       <div style={{ maxWidth: 1100, margin: '0 auto', paddingBottom: selectMode ? 80 : 0 }}>
@@ -1600,7 +1605,7 @@ function EditModal({ item, onSave, onClose }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ padding: 0, overflow: 'hidden', maxWidth: 480, display: 'flex', flexDirection: 'column' }}>
+      <div className="modal-content edit-modal" onClick={(e) => e.stopPropagation()} style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {/* 헤더 */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 14px 14px 20px', borderBottom: '0.5px solid rgba(0,0,0,0.06)' }}>
           <h3 style={{ fontSize: 17, fontWeight: 600, margin: 0 }}>{isEdit ? '콘텐츠 수정' : '새 콘텐츠'}</h3>
