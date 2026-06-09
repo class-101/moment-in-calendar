@@ -101,6 +101,110 @@ const tintBg = (hex, ratio = 0.86) => {
 
 const dayLabels = ['일', '월', '화', '수', '목', '금', '토'];
 
+// ============================================================
+// 표 붙여넣기 → 마크다운 표 변환 / 마크다운 표 렌더링
+// 메모(textarea)에 HTML 표나 엑셀(TSV)을 붙여넣으면 줄글로 뭉개지는 문제 해결.
+// 붙여넣을 때 "| 셀 | 셀 |" 형태의 마크다운 표로 바꿔 넣고, 상세보기에서 진짜 표로 렌더한다.
+// ============================================================
+function rowsToMarkdownTable(rows) {
+  const clean = (rows || []).map(r => (r || []).map(c => String(c == null ? '' : c).replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').replace(/\|/g, '\\|').trim()));
+  const nonEmpty = clean.filter(r => r.some(c => c !== ''));
+  if (nonEmpty.length === 0) return null;
+  const cols = Math.max(...nonEmpty.map(r => r.length));
+  if (cols < 2) return null; // 열이 1개뿐이면 표로 보지 않음
+  const pad = (r) => { const c = r.slice(); while (c.length < cols) c.push(''); return c; };
+  const line = (r) => '| ' + pad(r).join(' | ') + ' |';
+  const out = [line(nonEmpty[0]), '| ' + Array(cols).fill('---').join(' | ') + ' |'];
+  for (let i = 1; i < nonEmpty.length; i++) out.push(line(nonEmpty[i]));
+  return out.join('\n');
+}
+
+// 클립보드(HTML 표 또는 엑셀 TSV)에서 마크다운 표 문자열을 만든다. 표가 아니면 null.
+function clipboardToMarkdownTable(dt) {
+  if (!dt) return null;
+  const html = dt.getData && dt.getData('text/html');
+  if (html && /<table[\s>]/i.test(html)) {
+    try {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const table = doc.querySelector('table');
+      if (table) {
+        const rows = Array.from(table.querySelectorAll('tr')).map(tr =>
+          Array.from(tr.querySelectorAll('th,td')).map(td => (td.textContent || '').trim())
+        );
+        const md = rowsToMarkdownTable(rows);
+        if (md) return md;
+      }
+    } catch (e) { /* 무시하고 텍스트 처리로 */ }
+  }
+  const text = (dt.getData && dt.getData('text/plain')) || '';
+  // 엑셀·시트 복사 = 탭 구분(TSV). 두 줄 이상 + 탭 있으면 표로 간주.
+  if (text.includes('\t')) {
+    const lines = text.replace(/\r/g, '').split('\n').filter((l, i, a) => l.length || i < a.length - 1);
+    const rows = lines.filter(l => l.trim().length).map(l => l.split('\t'));
+    if (rows.length >= 1 && rows.some(r => r.length >= 2)) {
+      const md = rowsToMarkdownTable(rows);
+      if (md) return md;
+    }
+  }
+  return null;
+}
+
+// 마크다운 표 한 줄인지 (| a | b |)
+const isMdTableLine = (l) => /^\s*\|.*\|\s*$/.test(l);
+const isMdSepLine = (l) => /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(l) && l.includes('-');
+const splitMdRow = (l) => {
+  let s = l.trim();
+  if (s.startsWith('|')) s = s.slice(1);
+  if (s.endsWith('|')) s = s.slice(0, -1);
+  return s.split('|').map(c => c.replace(/\\\|/g, '|').trim());
+};
+
+// 메모 텍스트를 표/일반 텍스트 블록으로 나눠 렌더 (표는 진짜 <table>로)
+function MemoView({ text }) {
+  const lines = String(text || '').split('\n');
+  const blocks = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (isMdTableLine(lines[i])) {
+      const tbl = [];
+      while (i < lines.length && isMdTableLine(lines[i])) { tbl.push(lines[i]); i++; }
+      const rows = tbl.filter(l => !isMdSepLine(l)).map(splitMdRow);
+      if (rows.length >= 1 && rows[0].length >= 2) {
+        blocks.push({ type: 'table', rows });
+        continue;
+      }
+      blocks.push({ type: 'text', text: tbl.join('\n') });
+      continue;
+    }
+    const txt = [];
+    while (i < lines.length && !isMdTableLine(lines[i])) { txt.push(lines[i]); i++; }
+    blocks.push({ type: 'text', text: txt.join('\n') });
+  }
+  return (
+    <div style={{ lineHeight: 1.5, overflowWrap: 'anywhere' }}>
+      {blocks.map((b, bi) => b.type === 'table' ? (
+        <div key={bi} style={{ overflowX: 'auto', margin: '6px 0' }}>
+          <table style={{ borderCollapse: 'collapse', fontSize: 12.5, width: '100%' }}>
+            <tbody>
+              {b.rows.map((r, ri) => (
+                <tr key={ri}>
+                  {r.map((c, ci) => {
+                    const head = ri === 0;
+                    const Tag = head ? 'th' : 'td';
+                    return <Tag key={ci} style={{ border: '0.5px solid #E3E0D7', padding: '5px 8px', textAlign: 'left', verticalAlign: 'top', background: head ? '#F4F2EC' : '#FFFFFF', fontWeight: head ? 600 : 400, color: '#1A1A1A', whiteSpace: 'pre-wrap' }}>{c}</Tag>;
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        b.text.trim() === '' ? null : <div key={bi} style={{ whiteSpace: 'pre-wrap' }}>{b.text}</div>
+      ))}
+    </div>
+  );
+}
+
 // 레퍼런스 URL 유무 마커 (있음 🔗 / 없음 ⚠️)
 function RefMark({ it }) {
   const has = !!(it.referenceUrl && it.referenceUrl.trim());
@@ -1549,7 +1653,7 @@ function DetailModal({ item, performance, onClose, onToggleCompleted, onUpdatePe
               </div>
             } />
           )}
-          {item.description && <InfoRow label="메모" value={<div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5, overflowWrap: 'anywhere' }}>{item.description}</div>} />}
+          {item.description && <InfoRow label="메모" value={<MemoView text={item.description} />} />}
         </div>
 
         <div style={{ padding: '12px 22px 16px', borderTop: '0.5px solid rgba(0,0,0,0.06)', marginTop: 12 }}>
@@ -2004,9 +2108,27 @@ function EditModal({ item, onSave, onClose }) {
                 <textarea
                   value={form.description || ''}
                   onChange={(e) => handleChange('description', e.target.value)}
+                  onPaste={(e) => {
+                    const md = clipboardToMarkdownTable(e.clipboardData);
+                    if (!md) return; // 표가 아니면 기본 붙여넣기
+                    e.preventDefault();
+                    const ta = e.target;
+                    const start = ta.selectionStart ?? (form.description || '').length;
+                    const end = ta.selectionEnd ?? start;
+                    const cur = form.description || '';
+                    const before = cur.slice(0, start);
+                    const after = cur.slice(end);
+                    // 표 앞뒤로 빈 줄 보장 (다른 글과 안 붙게)
+                    const pre = before && !before.endsWith('\n') ? before + '\n' : before;
+                    const post = after && !after.startsWith('\n') ? '\n' + after : after;
+                    const next = pre + md + post;
+                    handleChange('description', next);
+                    const caret = (pre + md).length;
+                    requestAnimationFrame(() => { try { ta.selectionStart = ta.selectionEnd = caret; } catch (err) { /* 무시 */ } });
+                  }}
                   rows={3}
                   style={{ ...inputStyle, resize: 'vertical', minHeight: 70, lineHeight: 1.5 }}
-                  placeholder="추가 설명·아이디어·캡션 초안 등"
+                  placeholder="추가 설명·아이디어·캡션 초안 등 (표를 붙여넣으면 표로 정리돼요)"
                 />
               </div>
 
