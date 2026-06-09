@@ -949,9 +949,9 @@ export default function App({ session }) {
         .bulk-bar { position: fixed; left: 0; right: 0; bottom: 0; background: #1A1A1A; color: #FFFFFF; padding: 14px 20px; display: flex; align-items: center; gap: 12px; z-index: 1500; box-shadow: 0 -4px 16px rgba(0,0,0,0.15); }
 
         /* 발행 목표 오버레이 (월간 점 / 주간 칩) */
-        .plan-dots { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; margin: 2px 0 3px; }
-        .plan-dot { min-width: 15px; flex: 1 1 0; max-width: 26px; height: 8px; border-radius: 3px; box-sizing: border-box; flex-shrink: 0; }
-        .plan-dot.unmet { box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06); }
+        .plan-dots { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 2px 0 3px; }
+        .plan-dot { width: 9px; height: 9px; border-radius: 50%; box-sizing: border-box; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); }
+        .plan-dot.unmet { opacity: 0.4; }
         .plan-chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 0 0 8px; }
         .plan-chips-label { font-size: 9.5px; color: #B0AEA6; font-weight: 600; letter-spacing: 0.4px; margin-right: 1px; }
         .plan-chip { font-size: 10.5px; line-height: 1.4; padding: 2px 7px; border-radius: 9px; border: 1px solid transparent; font-weight: 500; white-space: nowrap; }
@@ -2429,7 +2429,7 @@ function PlanTargets({ dow, plan, present, variant, style }) {
           const col = COLORS[cv] || { fg: '#888780' };
           const met = has(cv);
           return <span key={cv} className={`plan-dot ${met ? 'met' : 'unmet'}`}
-            style={{ background: met ? col.fg : (col.bg || '#EFEDE6') }} />;
+            style={{ background: col.bg || '#EFEDE6' }} />;
         })}
       </div>
     );
