@@ -1059,7 +1059,7 @@ export default function App({ session }) {
         .plan-chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 0 0 8px; }
         .plan-chips-label { font-size: 9.5px; color: #B0AEA6; font-weight: 600; letter-spacing: 0.4px; margin-right: 1px; }
         .plan-chip { font-size: 10.5px; line-height: 1.4; padding: 2px 7px; border-radius: 9px; border: 1px solid transparent; font-weight: 500; white-space: nowrap; }
-        .plan-chip.unmet { background: transparent !important; border-style: dashed; opacity: 0.75; }
+        .plan-chip.unmet { opacity: 0.5; }
 
         /* 발행 계획 보드 */
         .plan-intro { background: #FFFFFF; border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; }
@@ -2569,7 +2569,7 @@ function PlanTargets({ dow, plan, present, variant, style }) {
         return (
           <span key={cv} className={`plan-chip ${met ? 'met' : 'unmet'}`}
             title={met ? '등록됨' : '아직 등록 안 됨'}
-            style={met ? { background: col.bg, color: col.fg } : { color: col.fg, borderColor: col.fg }}>
+            style={{ background: col.bg, color: col.fg }}>
             {met ? '✓ ' : '○ '}{label}
           </span>
         );
@@ -2696,7 +2696,7 @@ function PlanView({ plan, channels, onSetDay, isMobile }) {
                         const col = COLORS[c.value] || { fg: '#1A1A1A' };
                         return (
                           <button key={c.value} onClick={() => addToDay(dow, c.value)}>
-                            <span className="plan-pal-dot" style={{ background: col.fg }} />
+                            <span className="plan-pal-dot" style={{ background: col.bg || '#F0F0EB', boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.12)' }} />
                             {c.label}
                           </button>
                         );
@@ -2721,7 +2721,7 @@ function PlanView({ plan, channels, onSetDay, isMobile }) {
             const col = COLORS[ch.value] || { bg: '#F0F0EB', fg: '#1A1A1A' };
             return (
               <div key={ch.value} className="plan-summary-row">
-                <span style={{ width: 11, height: 11, borderRadius: 3, background: col.fg, flexShrink: 0 }} />
+                <span style={{ width: 11, height: 11, borderRadius: 3, background: col.bg, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.12)', flexShrink: 0 }} />
                 <span style={{ fontSize: 13.5, color: '#1A1A1A', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch.label}</span>
                 <span style={{ fontSize: 12, color: '#888780', flexShrink: 0 }}>주 {days.length}회</span>
                 <div className="plan-summary-days">
