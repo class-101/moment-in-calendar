@@ -2898,7 +2898,7 @@ function KPIView({ items, performance, channels, currentMonth }) {
               <div key={ch.value || i} style={{ opacity: muted ? 0.5 : 1 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                    <span style={{ width: 11, height: 11, borderRadius: 3, background: ch.color.fg, flexShrink: 0 }} />
+                    <span style={{ width: 11, height: 11, borderRadius: 3, background: ch.color.bg, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.12)', flexShrink: 0 }} />
                     <span style={{ fontSize: 13.5, color: '#1A1A1A', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch.name}</span>
                     {ch.type && <span style={{ fontSize: 11, color: '#888780', background: '#EEEBE3', borderRadius: 5, padding: '2px 7px', flexShrink: 0, whiteSpace: 'nowrap' }}>{typeEmoji(ch.type)} {ch.type}</span>}
                   </div>
@@ -2907,7 +2907,7 @@ function KPIView({ items, performance, channels, currentMonth }) {
                   </span>
                 </div>
                 <div style={{ height: 9, background: '#EFEDE6', borderRadius: 5, overflow: 'hidden' }}>
-                  <div style={{ width: `${r}%`, height: '100%', background: ch.color.fg, borderRadius: 5, transition: 'width 0.5s ease' }} />
+                  <div style={{ width: `${r}%`, height: '100%', background: ch.color.bg, borderRadius: 5, transition: 'width 0.5s ease' }} />
                 </div>
               </div>
             );
@@ -2933,7 +2933,7 @@ function KPIView({ items, performance, channels, currentMonth }) {
                   return (
                     <div key={p.it.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span style={{ width: 18, fontSize: 13, fontWeight: 700, color: '#C79A2E', flexShrink: 0, textAlign: 'center' }}>{i + 1}</span>
-                      <span style={{ width: 8, height: 8, borderRadius: 2, background: c.fg, flexShrink: 0 }} />
+                      <span style={{ width: 8, height: 8, borderRadius: 2, background: c.bg, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.12)', flexShrink: 0 }} />
                       <span style={{ flex: 1, fontSize: 13, color: '#1A1A1A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.it.title}</span>
                       <span style={{ fontSize: 12, color: '#5F5E5A', flexShrink: 0, whiteSpace: 'nowrap' }}>❤️ {p.likes} · 🔖 {p.saves}</span>
                     </div>
