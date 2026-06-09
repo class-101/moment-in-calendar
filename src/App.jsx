@@ -170,6 +170,14 @@ export default function App({ session }) {
   const [channels, setChannels] = useState(DEFAULT_CHANNELS);
   const [channelMgrOpen, setChannelMgrOpen] = useState(false);
 
+  // 요일별 발행 계획 (weekday_plan 테이블) — { 0:[channelValue,...], ..., 6:[...] }
+  const [weekdayPlan, setWeekdayPlan] = useState({});
+  // 월간·주간 캘린더에 발행 목표 오버레이 표시 여부
+  const [showPlanOverlay, setShowPlanOverlay] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return window.localStorage.getItem('moment-plan-overlay') !== 'off';
+  });
+
   const [selectedItem, setSelectedItem] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
@@ -297,6 +305,44 @@ export default function App({ session }) {
   }, []);
 
   useEffect(() => { loadChannels(); }, [loadChannels]);
+
+  // ============================================
+  // 요일별 발행 계획 (Weekday publishing plan)
+  // ============================================
+  const loadWeekdayPlan = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from('weekday_plan').select('*');
+      if (error) throw error;
+      const map = {};
+      (data || []).forEach(r => { map[r.dow] = Array.isArray(r.channels) ? r.channels : []; });
+      setWeekdayPlan(map);
+    } catch (err) {
+      console.error('발행 계획 로드 실패:', err);
+    }
+  }, []);
+
+  useEffect(() => { loadWeekdayPlan(); }, [loadWeekdayPlan]);
+
+  // 특정 요일(dow)의 채널 목록 저장 — 드래그·추가·삭제 후 호출 (낙관적 업데이트)
+  const setDayChannels = async (dow, channelArr) => {
+    setWeekdayPlan(prev => ({ ...prev, [dow]: channelArr }));
+    try {
+      const { error } = await supabase.from('weekday_plan')
+        .upsert({ dow, channels: channelArr, updated_at: new Date().toISOString() });
+      if (error) throw error;
+    } catch (err) {
+      alert('발행 계획 저장 실패: ' + (err.message || err));
+      await loadWeekdayPlan();
+    }
+  };
+
+  const togglePlanOverlay = () => {
+    setShowPlanOverlay(v => {
+      const nv = !v;
+      if (typeof window !== 'undefined') window.localStorage.setItem('moment-plan-overlay', nv ? 'on' : 'off');
+      return nv;
+    });
+  };
 
   // 채널 추가
   const addChannel = async (ch) => {
@@ -659,6 +705,13 @@ export default function App({ session }) {
   const filteredItems = applyFilters(items);
   const isFiltered = searchQuery || filterChannels.size > 0 || filterCompleted !== 'all' || filterCore || filterRef !== 'all';
 
+  // 날짜별 실제 발행(예정) 채널 집합 — 발행 목표 달성 여부 판정용 (필터와 무관하게 전체 items 기준)
+  const dateChannelMap = {};
+  items.forEach(i => {
+    if (!dateChannelMap[i.date]) dateChannelMap[i.date] = new Set();
+    dateChannelMap[i.date].add(i.channel);
+  });
+
   // 캘린더 그리드 (6주 = 42일, 이전달·다음달 일부 포함)
   const [yearStr, monthStr] = currentMonth.split('-');
   const yearNum = parseInt(yearStr, 10);
@@ -885,6 +938,54 @@ export default function App({ session }) {
 
         .bulk-bar { position: fixed; left: 0; right: 0; bottom: 0; background: #1A1A1A; color: #FFFFFF; padding: 14px 20px; display: flex; align-items: center; gap: 12px; z-index: 1500; box-shadow: 0 -4px 16px rgba(0,0,0,0.15); }
 
+        /* 발행 목표 오버레이 (월간 점 / 주간 칩) */
+        .plan-dots { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; margin: 1px 0 2px; }
+        .plan-dot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid; box-sizing: border-box; flex-shrink: 0; }
+        .plan-dot.unmet { background: transparent !important; opacity: 0.45; }
+        .plan-chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 0 0 8px; }
+        .plan-chips-label { font-size: 9.5px; color: #B0AEA6; font-weight: 600; letter-spacing: 0.4px; margin-right: 1px; }
+        .plan-chip { font-size: 10.5px; line-height: 1.4; padding: 2px 7px; border-radius: 9px; border: 1px solid transparent; font-weight: 500; white-space: nowrap; }
+        .plan-chip.unmet { background: transparent !important; border-style: dashed; opacity: 0.75; }
+
+        /* 발행 계획 보드 */
+        .plan-intro { background: #FFFFFF; border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; }
+        .plan-intro-title { font-size: 15px; font-weight: 600; color: #1A1A1A; margin: 0 0 4px; }
+        .plan-intro-sub { font-size: 12.5px; color: #888780; line-height: 1.55; margin: 0; }
+        .plan-palette { background: #FFFFFF; border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
+        .plan-palette-label { font-size: 12px; color: #888780; font-weight: 500; margin-bottom: 10px; }
+        .plan-palette-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+        .plan-pal-chip { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 10px; font-size: 12.5px; font-weight: 500; cursor: grab; border: 1px solid transparent; font-family: inherit; user-select: none; transition: transform 0.1s, box-shadow 0.1s; }
+        .plan-pal-chip:active { cursor: grabbing; }
+        .plan-pal-chip.dragging { opacity: 0.4; }
+        .plan-pal-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+        .plan-board { display: grid; grid-template-columns: repeat(7, minmax(124px, 1fr)); gap: 6px; width: 100%; min-width: 760px; }
+        .plan-col { background: #FFFFFF; border-radius: 10px; padding: 10px 8px 8px; min-height: 200px; display: flex; flex-direction: column; transition: background 0.15s, box-shadow 0.15s; }
+        .plan-col.over { background: #F4F1E6; box-shadow: inset 0 0 0 2px #1A1A1A; }
+        .plan-col-head { display: flex; align-items: baseline; gap: 6px; padding: 0 4px 8px; border-bottom: 0.5px solid rgba(0,0,0,0.06); margin-bottom: 8px; }
+        .plan-col-dow { font-size: 14px; font-weight: 700; }
+        .plan-col-count { font-size: 11px; color: #B0AEA6; margin-left: auto; }
+        .plan-col-body { display: flex; flex-direction: column; gap: 5px; flex: 1; }
+        .plan-day-chip { display: flex; align-items: center; gap: 6px; padding: 7px 8px; border-radius: 8px; font-size: 12px; font-weight: 500; cursor: grab; border-left: 3px solid; font-family: inherit; text-align: left; }
+        .plan-day-chip:active { cursor: grabbing; }
+        .plan-day-chip .x { margin-left: auto; cursor: pointer; color: inherit; opacity: 0.5; font-size: 14px; line-height: 1; padding: 0 2px; }
+        .plan-day-chip .x:hover { opacity: 1; }
+        .plan-col-empty { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; color: #C4C2BA; font-size: 11px; line-height: 1.5; border: 1px dashed #E3E0D7; border-radius: 8px; padding: 14px 6px; min-height: 60px; }
+        .plan-add-btn { margin-top: 6px; width: 100%; background: #F4F2EC; border: none; border-radius: 8px; padding: 7px; cursor: pointer; font-size: 12px; color: #5F5E5A; font-family: inherit; transition: background 0.1s, color 0.1s; }
+        .plan-add-btn:hover { background: #1A1A1A; color: #FFFFFF; }
+        .plan-add-pop { background: #FAF9F5; border: 0.5px solid rgba(0,0,0,0.1); border-radius: 8px; padding: 6px; margin-top: 6px; display: flex; flex-direction: column; gap: 3px; }
+        .plan-add-pop button { display: flex; align-items: center; gap: 6px; background: transparent; border: none; padding: 6px 7px; border-radius: 6px; cursor: pointer; font-size: 12px; color: #1A1A1A; font-family: inherit; text-align: left; }
+        .plan-add-pop button:hover { background: #ECE9E0; }
+        .plan-summary { background: #FFFFFF; border-radius: 12px; padding: 16px 18px; margin-top: 14px; }
+        .plan-summary-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+        .plan-summary-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; }
+        .plan-summary-row + .plan-summary-row { border-top: 0.5px solid rgba(0,0,0,0.05); }
+        .plan-summary-days { display: flex; gap: 3px; margin-left: auto; }
+        .plan-summary-day { width: 20px; height: 20px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; }
+        @media (max-width: 640px) {
+          .plan-board { min-width: 760px; }
+          .plan-intro-title { font-size: 14px; }
+        }
+
         @media (max-width: 640px) {
           .cal-cell { min-height: 90px; max-height: 140px; padding: 5px 4px; }
           .cal-cell-empty { min-height: 90px; max-height: 140px; }
@@ -978,7 +1079,8 @@ export default function App({ session }) {
               { value: 'month', label: '월간' },
               { value: 'week', label: '주간' },
               { value: 'list', label: '리스트' },
-              { value: 'kpi', label: 'KPI' }
+              { value: 'kpi', label: 'KPI' },
+              { value: 'plan', label: '발행 계획' }
             ].map(opt => (
               <button
                 key={opt.value}
@@ -989,6 +1091,13 @@ export default function App({ session }) {
           </div>
 
           <div className="search-filter">
+            {(viewMode === 'month' || viewMode === 'week') && (
+              <button
+                onClick={togglePlanOverlay}
+                className={`filter-btn ${showPlanOverlay ? 'active' : ''}`}
+                title="요일별 발행 목표를 캘린더에 표시"
+              >🎯 목표 {showPlanOverlay ? 'ON' : 'OFF'}</button>
+            )}
             <div className="search-box">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0 }}>
                 <circle cx="6" cy="6" r="4.5" stroke="#888780" strokeWidth="1.3" fill="none" />
@@ -1131,6 +1240,9 @@ export default function App({ session }) {
                           </div>
                           {cell.holiday && <div className="day-event" style={{ color: '#D4537E', fontWeight: 500 }}>{cell.holiday}</div>}
                           {cell.anniversary && <div className="day-event">{cell.anniversary}</div>}
+                          {showPlanOverlay && (
+                            <PlanTargets dow={cell.dow} plan={weekdayPlan} present={dateChannelMap[cell.dateStr]} variant="dots" />
+                          )}
                           {cell.dayItems.map(it => {
                             const c = COLORS[it.channel] || { bg: '#F0F0EB', fg: '#1A1A1A' };
                             const isDragging = draggingId === it.id;
@@ -1174,6 +1286,9 @@ export default function App({ session }) {
             weekStart={weekStart}
             setWeekStart={setWeekStart}
             items={filteredItems}
+            plan={weekdayPlan}
+            showPlanOverlay={showPlanOverlay}
+            dateChannelMap={dateChannelMap}
             holidays={HOLIDAYS}
             anniversaries={ANNIVERSARIES}
             onItemClick={setSelectedItem}
@@ -1218,6 +1333,17 @@ export default function App({ session }) {
 
         {!loading && !error && viewMode === 'kpi' && (
           <KPIView items={items} performance={performance} channels={channels} currentMonth={currentMonth} />
+        )}
+
+        {!loading && !error && viewMode === 'plan' && (
+          <PlanView
+            plan={weekdayPlan}
+            channels={channels}
+            onSetDay={setDayChannels}
+            items={items}
+            currentMonth={currentMonth}
+            onGoMonth={() => setViewMode('month')}
+          />
         )}
 
         {selectedItem && (
@@ -2115,7 +2241,7 @@ function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, o
   );
 }
 
-function WeekView({ weekStart, setWeekStart, items, holidays, anniversaries, onItemClick, onItemContextMenu, draggingId, dragOverDate, handleDragStart, handleDragEnd, handleDragOver, handleDragLeave, handleDrop, isMobile, selectMode, selectedIds, toggleSelect }) {
+function WeekView({ weekStart, setWeekStart, items, plan, showPlanOverlay, dateChannelMap, holidays, anniversaries, onItemClick, onItemContextMenu, draggingId, dragOverDate, handleDragStart, handleDragEnd, handleDragOver, handleDragLeave, handleDrop, isMobile, selectMode, selectedIds, toggleSelect }) {
   const dayLabelsLocal = ['일', '월', '화', '수', '목', '금', '토'];
 
   const weekDates = [];
@@ -2169,6 +2295,9 @@ function WeekView({ weekStart, setWeekStart, items, holidays, anniversaries, onI
                   <span style={{ fontSize: 12, color: '#888780' }}>{dayLabelsLocal[wd.dow]}{holiday ? ` · ${holiday}` : ''}{anniversary ? ` · ${anniversary}` : ''}</span>
                   {dayItems.length > 0 && <span style={{ marginLeft: 'auto', fontSize: 11, color: '#888780' }}>{dayItems.length}개</span>}
                 </div>
+                {showPlanOverlay && (
+                  <PlanTargets dow={wd.dow} plan={plan} present={dateChannelMap && dateChannelMap[wd.dateStr]} variant="chips" style={{ padding: '6px 14px 0' }} />
+                )}
                 {dayItems.length > 0 && (
                   <div style={{ padding: '6px 0' }}>
                     {dayItems.map(it => {
@@ -2217,6 +2346,9 @@ function WeekView({ weekStart, setWeekStart, items, holidays, anniversaries, onI
                   {holiday && <div style={{ fontSize: 11, color: '#D4537E', marginTop: 2, fontWeight: 500, width: '100%' }}>{holiday}</div>}
                   {anniversary && <div style={{ fontSize: 11, color: '#888780', marginTop: 2, width: '100%' }}>{anniversary}</div>}
                 </div>
+                {showPlanOverlay && (
+                  <PlanTargets dow={wd.dow} plan={plan} present={dateChannelMap && dateChannelMap[wd.dateStr]} variant="chips" />
+                )}
                 <div className="week-cell-items">
                   {dayItems.map(it => {
                     const c = COLORS[it.channel] || { bg: '#F0F0EB', fg: '#1A1A1A' };
@@ -2258,6 +2390,225 @@ const weekNavBtn = {
   padding: 0,
   fontFamily: 'inherit'
 };
+
+// ============================================================
+// 발행 목표 오버레이 (월간 = 점 / 주간 = 칩)
+// present: 해당 날짜에 실제 등록된 채널들의 Set
+// ============================================================
+function PlanTargets({ dow, plan, present, variant, style }) {
+  const planned = ((plan && plan[dow]) || []).filter(cv => CHANNEL_OPTIONS.some(o => o.value === cv));
+  if (planned.length === 0) return null;
+  const has = (cv) => present instanceof Set ? present.has(cv) : false;
+
+  if (variant === 'dots') {
+    const metCount = planned.filter(has).length;
+    const title = '발행 목표 ' + planned.map(cv => {
+      const opt = CHANNEL_OPTIONS.find(o => o.value === cv);
+      return `${opt ? (opt.shortLabel || opt.label) : cv}${has(cv) ? ' ✓' : ' (미등록)'}`;
+    }).join(', ') + ` · ${metCount}/${planned.length} 등록됨`;
+    return (
+      <div className="plan-dots" title={title}>
+        {planned.map(cv => {
+          const col = COLORS[cv] || { fg: '#888780' };
+          const met = has(cv);
+          return <span key={cv} className={`plan-dot ${met ? 'met' : 'unmet'}`}
+            style={{ background: met ? col.fg : 'transparent', borderColor: col.fg }} />;
+        })}
+      </div>
+    );
+  }
+
+  // chips (주간)
+  return (
+    <div className="plan-chips" style={style}>
+      <span className="plan-chips-label">목표</span>
+      {planned.map(cv => {
+        const opt = CHANNEL_OPTIONS.find(o => o.value === cv);
+        const col = COLORS[cv] || { bg: '#F0F0EB', fg: '#888780' };
+        const met = has(cv);
+        const label = opt ? (opt.shortLabel || opt.label) : cv;
+        return (
+          <span key={cv} className={`plan-chip ${met ? 'met' : 'unmet'}`}
+            title={met ? '등록됨' : '아직 등록 안 됨'}
+            style={met ? { background: col.bg, color: col.fg } : { color: col.fg, borderColor: col.fg }}>
+            {met ? '✓ ' : '○ '}{label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+// ============================================================
+// 발행 계획 — 요일별 채널 목표 (드래그앤드롭 보드)
+// ============================================================
+function PlanView({ plan, channels, onSetDay, items, currentMonth, onGoMonth }) {
+  const dayLabelsLocal = ['일', '월', '화', '수', '목', '금', '토'];
+  const chList = (channels && channels.length ? channels : []);
+  const chById = Object.fromEntries(chList.map(c => [c.value, c]));
+  const [dragData, setDragData] = useState(null);   // { channel, fromDow }
+  const [dragOverDow, setDragOverDow] = useState(null);
+  const [addOpenDow, setAddOpenDow] = useState(null);
+
+  // 존재하는 채널만 (삭제된 채널 자동 정리)
+  const planFor = (dow) => ((plan && plan[dow]) || []).filter(cv => chById[cv]);
+
+  const dropOn = (dow) => {
+    setDragOverDow(null);
+    if (!dragData) return;
+    const { channel, fromDow } = dragData;
+    setDragData(null);
+    const target = planFor(dow);
+    if (!target.includes(channel)) onSetDay(dow, [...target, channel]);
+    if (fromDow != null && fromDow !== dow) {
+      onSetDay(fromDow, planFor(fromDow).filter(c => c !== channel));
+    }
+  };
+  const removeFromDay = (dow, channel) => onSetDay(dow, planFor(dow).filter(c => c !== channel));
+  const addToDay = (dow, channel) => {
+    const t = planFor(dow);
+    if (!t.includes(channel)) onSetDay(dow, [...t, channel]);
+    setAddOpenDow(null);
+  };
+
+  // 채널별 주간 요약 (주 N회 + 요일)
+  const summary = chList.map(c => {
+    const days = [];
+    for (let d = 0; d < 7; d++) if (planFor(d).includes(c.value)) days.push(d);
+    return { ch: c, days };
+  }).filter(s => s.days.length > 0);
+
+  const totalTargets = [0, 1, 2, 3, 4, 5, 6].reduce((n, d) => n + planFor(d).length, 0);
+
+  return (
+    <div>
+      <div className="plan-intro">
+        <p className="plan-intro-title">🎯 요일별 발행 계획</p>
+        <p className="plan-intro-sub">
+          아래 채널을 요일로 끌어다 놓으면 그 요일의 <b>발행 목표</b>가 정해져요. 칩을 다른 요일로 끌면 이동, ×로 삭제돼요.<br />
+          여기서 정한 목표는 <b>월간·주간 캘린더</b>에 표시돼서, 어떤 요일에 뭘 올려야 하는지 한눈에 보여요.
+          {totalTargets > 0 && <> · 현재 주간 목표 <b>{totalTargets}건</b></>}
+        </p>
+      </div>
+
+      {/* 채널 팔레트 */}
+      <div className="plan-palette">
+        <div className="plan-palette-label">채널 — 끌어서 요일에 추가</div>
+        <div className="plan-palette-chips">
+          {chList.length === 0 && <span style={{ fontSize: 12.5, color: '#B0AEA6' }}>먼저 🎨 채널에서 채널을 추가하세요.</span>}
+          {chList.map(c => {
+            const col = COLORS[c.value] || { bg: '#F0F0EB', fg: '#1A1A1A' };
+            return (
+              <div key={c.value}
+                className={`plan-pal-chip ${dragData && dragData.channel === c.value && dragData.fromDow == null ? 'dragging' : ''}`}
+                draggable
+                onDragStart={(e) => { e.dataTransfer.effectAllowed = 'copyMove'; e.dataTransfer.setData('text/plain', c.value); setDragData({ channel: c.value, fromDow: null }); }}
+                onDragEnd={() => { setDragData(null); setDragOverDow(null); }}
+                style={{ background: col.bg, color: col.fg }}
+                title={`${c.label} — 끌어서 요일에 놓기`}>
+                <span className="plan-pal-dot" style={{ background: col.fg }} />
+                {c.shortLabel || c.label}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 7요일 보드 */}
+      <div className="week-scroll">
+        <div className="plan-board">
+          {[0, 1, 2, 3, 4, 5, 6].map(dow => {
+            const dayChannels = planFor(dow);
+            const dowColor = dow === 0 ? '#D4537E' : dow === 6 ? '#5C7AA8' : '#1A1A1A';
+            const available = chList.filter(c => !dayChannels.includes(c.value));
+            return (
+              <div key={dow}
+                className={`plan-col ${dragOverDow === dow ? 'over' : ''}`}
+                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverDow !== dow) setDragOverDow(dow); }}
+                onDragLeave={(e) => { if (e.currentTarget.contains(e.relatedTarget)) return; setDragOverDow(d => d === dow ? null : d); }}
+                onDrop={(e) => { e.preventDefault(); dropOn(dow); }}>
+                <div className="plan-col-head">
+                  <span className="plan-col-dow" style={{ color: dowColor }}>{dayLabelsLocal[dow]}</span>
+                  {dayChannels.length > 0 && <span className="plan-col-count">{dayChannels.length}</span>}
+                </div>
+                <div className="plan-col-body">
+                  {dayChannels.length === 0 && addOpenDow !== dow && (
+                    <div className="plan-col-empty">채널을<br />여기에 놓기</div>
+                  )}
+                  {dayChannels.map(cv => {
+                    const col = COLORS[cv] || { bg: '#F0F0EB', fg: '#1A1A1A' };
+                    const c = chById[cv];
+                    return (
+                      <div key={cv}
+                        className="plan-day-chip"
+                        draggable
+                        onDragStart={(e) => { e.dataTransfer.effectAllowed = 'copyMove'; e.dataTransfer.setData('text/plain', cv); setDragData({ channel: cv, fromDow: dow }); }}
+                        onDragEnd={() => { setDragData(null); setDragOverDow(null); }}
+                        style={{ background: col.bg, color: col.fg, borderLeftColor: col.fg }}
+                        title={c ? c.label : cv}>
+                        {c ? (c.shortLabel || c.label) : cv}
+                        <span className="x" onClick={(e) => { e.stopPropagation(); removeFromDay(dow, cv); }} title="삭제">×</span>
+                      </div>
+                    );
+                  })}
+                  {addOpenDow === dow ? (
+                    <div className="plan-add-pop">
+                      {available.length === 0 && <div style={{ fontSize: 11.5, color: '#B0AEA6', padding: '4px 7px' }}>추가할 채널이 없어요</div>}
+                      {available.map(c => {
+                        const col = COLORS[c.value] || { fg: '#1A1A1A' };
+                        return (
+                          <button key={c.value} onClick={() => addToDay(dow, c.value)}>
+                            <span className="plan-pal-dot" style={{ background: col.fg }} />
+                            {c.shortLabel || c.label}
+                          </button>
+                        );
+                      })}
+                      <button onClick={() => setAddOpenDow(null)} style={{ color: '#888780', justifyContent: 'center' }}>닫기</button>
+                    </div>
+                  ) : (
+                    <button className="plan-add-btn" onClick={() => setAddOpenDow(dow)}>＋ 채널 추가</button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 채널별 주간 요약 */}
+      {summary.length > 0 && (
+        <div className="plan-summary">
+          <div className="plan-summary-title">채널별 주간 발행 빈도</div>
+          {summary.map(({ ch, days }) => {
+            const col = COLORS[ch.value] || { bg: '#F0F0EB', fg: '#1A1A1A' };
+            return (
+              <div key={ch.value} className="plan-summary-row">
+                <span style={{ width: 11, height: 11, borderRadius: 3, background: col.fg, flexShrink: 0 }} />
+                <span style={{ fontSize: 13.5, color: '#1A1A1A', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch.label}</span>
+                <span style={{ fontSize: 12, color: '#888780', flexShrink: 0 }}>주 {days.length}회</span>
+                <div className="plan-summary-days">
+                  {[0, 1, 2, 3, 4, 5, 6].map(d => {
+                    const on = days.includes(d);
+                    return (
+                      <span key={d} className="plan-summary-day"
+                        style={{ background: on ? col.bg : '#F2F1EC', color: on ? col.fg : '#C4C2BA' }}>
+                        {dayLabelsLocal[d]}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: '0.5px solid rgba(0,0,0,0.07)', fontSize: 12, color: '#888780' }}>
+            월간·주간 캘린더에서 <b style={{ color: '#5F5E5A' }}>🎯 목표</b> 버튼으로 이 계획을 켜고 끌 수 있어요.
+            {onGoMonth && <> · <button onClick={onGoMonth} style={{ background: 'transparent', border: 'none', color: '#5C7AA8', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, padding: 0, textDecoration: 'underline' }}>월간 보기로 가기</button></>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ============================================================
 // KPI 대시보드
