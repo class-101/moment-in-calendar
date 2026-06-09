@@ -949,9 +949,9 @@ export default function App({ session }) {
         .bulk-bar { position: fixed; left: 0; right: 0; bottom: 0; background: #1A1A1A; color: #FFFFFF; padding: 14px 20px; display: flex; align-items: center; gap: 12px; z-index: 1500; box-shadow: 0 -4px 16px rgba(0,0,0,0.15); }
 
         /* 발행 목표 오버레이 (월간 점 / 주간 칩) */
-        .plan-dots { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; margin: 1px 0 2px; }
-        .plan-dot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid; box-sizing: border-box; flex-shrink: 0; }
-        .plan-dot.unmet { background: transparent !important; opacity: 0.45; }
+        .plan-dots { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; margin: 2px 0 3px; }
+        .plan-dot { min-width: 15px; flex: 1 1 0; max-width: 26px; height: 8px; border-radius: 3px; box-sizing: border-box; flex-shrink: 0; }
+        .plan-dot.unmet { box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06); }
         .plan-chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 0 0 8px; }
         .plan-chips-label { font-size: 9.5px; color: #B0AEA6; font-weight: 600; letter-spacing: 0.4px; margin-right: 1px; }
         .plan-chip { font-size: 10.5px; line-height: 1.4; padding: 2px 7px; border-radius: 9px; border: 1px solid transparent; font-weight: 500; white-space: nowrap; }
@@ -991,9 +991,18 @@ export default function App({ session }) {
         .plan-summary-row + .plan-summary-row { border-top: 0.5px solid rgba(0,0,0,0.05); }
         .plan-summary-days { display: flex; gap: 3px; margin-left: auto; }
         .plan-summary-day { width: 20px; height: 20px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; }
+        /* 모바일: 7열 가로 스크롤 대신 세로 스택 */
+        .plan-board.stack { display: flex; flex-direction: column; gap: 8px; min-width: 0; width: 100%; }
+        .plan-board.stack .plan-col { min-height: auto; padding: 11px 12px 11px; }
+        .plan-board.stack .plan-col-head { padding: 0 0 8px; }
+        .plan-board.stack .plan-col-body { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; }
+        .plan-board.stack .plan-day-chip { flex: 0 0 auto; }
+        .plan-board.stack .plan-add-btn { width: auto; flex: 0 0 auto; margin-top: 0; padding: 7px 13px; }
+        .plan-board.stack .plan-add-pop { flex: 0 0 100%; width: 100%; margin-top: 4px; }
         @media (max-width: 640px) {
-          .plan-board { min-width: 760px; }
           .plan-intro-title { font-size: 14px; }
+          .plan-summary-row { flex-wrap: wrap; }
+          .plan-summary-days { margin-left: 0; width: 100%; justify-content: flex-start; padding-left: 19px; margin-top: 4px; }
         }
 
         @media (max-width: 640px) {
@@ -1350,6 +1359,7 @@ export default function App({ session }) {
             plan={weekdayPlan}
             channels={channels}
             onSetDay={setDayChannels}
+            isMobile={isMobile}
           />
         )}
 
@@ -2419,7 +2429,7 @@ function PlanTargets({ dow, plan, present, variant, style }) {
           const col = COLORS[cv] || { fg: '#888780' };
           const met = has(cv);
           return <span key={cv} className={`plan-dot ${met ? 'met' : 'unmet'}`}
-            style={{ background: met ? col.fg : 'transparent', borderColor: col.fg }} />;
+            style={{ background: met ? col.fg : (col.bg || '#EFEDE6') }} />;
         })}
       </div>
     );
@@ -2449,7 +2459,7 @@ function PlanTargets({ dow, plan, present, variant, style }) {
 // ============================================================
 // 발행 계획 — 요일별 채널 목표 (드래그앤드롭 보드)
 // ============================================================
-function PlanView({ plan, channels, onSetDay }) {
+function PlanView({ plan, channels, onSetDay, isMobile }) {
   const dayLabelsLocal = ['일', '월', '화', '수', '목', '금', '토'];
   const chList = (channels && channels.length ? channels : []);
   const chById = Object.fromEntries(chList.map(c => [c.value, c]));
@@ -2520,9 +2530,9 @@ function PlanView({ plan, channels, onSetDay }) {
         </div>
       </div>
 
-      {/* 7요일 보드 */}
-      <div className="week-scroll">
-        <div className="plan-board">
+      {/* 7요일 보드 — 데스크탑은 7열 가로, 모바일은 세로 스택 */}
+      <div className={isMobile ? '' : 'week-scroll'}>
+        <div className={`plan-board ${isMobile ? 'stack' : ''}`}>
           {[0, 1, 2, 3, 4, 5, 6].map(dow => {
             const dayChannels = planFor(dow);
             const dowColor = dow === 0 ? '#D4537E' : dow === 6 ? '#5C7AA8' : '#1A1A1A';
@@ -2538,7 +2548,7 @@ function PlanView({ plan, channels, onSetDay }) {
                   {dayChannels.length > 0 && <span className="plan-col-count">{dayChannels.length}</span>}
                 </div>
                 <div className="plan-col-body">
-                  {dayChannels.length === 0 && addOpenDow !== dow && (
+                  {dayChannels.length === 0 && addOpenDow !== dow && !isMobile && (
                     <div className="plan-col-empty">채널을<br />여기에 놓기</div>
                   )}
                   {dayChannels.map(cv => {
