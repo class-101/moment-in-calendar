@@ -1340,9 +1340,6 @@ export default function App({ session }) {
             plan={weekdayPlan}
             channels={channels}
             onSetDay={setDayChannels}
-            items={items}
-            currentMonth={currentMonth}
-            onGoMonth={() => setViewMode('month')}
           />
         )}
 
@@ -2442,7 +2439,7 @@ function PlanTargets({ dow, plan, present, variant, style }) {
 // ============================================================
 // 발행 계획 — 요일별 채널 목표 (드래그앤드롭 보드)
 // ============================================================
-function PlanView({ plan, channels, onSetDay, items, currentMonth, onGoMonth }) {
+function PlanView({ plan, channels, onSetDay }) {
   const dayLabelsLocal = ['일', '월', '화', '수', '목', '금', '토'];
   const chList = (channels && channels.length ? channels : []);
   const chById = Object.fromEntries(chList.map(c => [c.value, c]));
@@ -2485,9 +2482,8 @@ function PlanView({ plan, channels, onSetDay, items, currentMonth, onGoMonth }) 
       <div className="plan-intro">
         <p className="plan-intro-title">🎯 요일별 발행 계획</p>
         <p className="plan-intro-sub">
-          아래 채널을 요일로 끌어다 놓으면 그 요일의 <b>발행 목표</b>가 정해져요. 칩을 다른 요일로 끌면 이동, ×로 삭제돼요.<br />
-          여기서 정한 목표는 <b>월간·주간 캘린더</b>에 표시돼서, 어떤 요일에 뭘 올려야 하는지 한눈에 보여요.
-          {totalTargets > 0 && <> · 현재 주간 목표 <b>{totalTargets}건</b></>}
+          채널을 요일로 끌어다 놓으면 발행 목표가 정해지고, 월간·주간 캘린더에 표시돼요. <span style={{ color: '#B0AEA6' }}>이동: 끌기 · 삭제: ×</span>
+          {totalTargets > 0 && <> · 주간 목표 <b>{totalTargets}건</b></>}
         </p>
       </div>
 
@@ -2600,10 +2596,6 @@ function PlanView({ plan, channels, onSetDay, items, currentMonth, onGoMonth }) 
               </div>
             );
           })}
-          <div style={{ marginTop: 12, paddingTop: 12, borderTop: '0.5px solid rgba(0,0,0,0.07)', fontSize: 12, color: '#888780' }}>
-            월간·주간 캘린더에서 <b style={{ color: '#5F5E5A' }}>🎯 목표</b> 버튼으로 이 계획을 켜고 끌 수 있어요.
-            {onGoMonth && <> · <button onClick={onGoMonth} style={{ background: 'transparent', border: 'none', color: '#5C7AA8', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, padding: 0, textDecoration: 'underline' }}>월간 보기로 가기</button></>}
-          </div>
         </div>
       )}
     </div>
