@@ -2404,7 +2404,7 @@ function PlanTargets({ dow, plan, present, variant, style }) {
     const metCount = planned.filter(has).length;
     const title = '발행 목표 ' + planned.map(cv => {
       const opt = CHANNEL_OPTIONS.find(o => o.value === cv);
-      return `${opt ? (opt.shortLabel || opt.label) : cv}${has(cv) ? ' ✓' : ' (미등록)'}`;
+      return `${opt ? opt.label : cv}${has(cv) ? ' ✓' : ' (미등록)'}`;
     }).join(', ') + ` · ${metCount}/${planned.length} 등록됨`;
     return (
       <div className="plan-dots" title={title}>
@@ -2426,7 +2426,7 @@ function PlanTargets({ dow, plan, present, variant, style }) {
         const opt = CHANNEL_OPTIONS.find(o => o.value === cv);
         const col = COLORS[cv] || { bg: '#F0F0EB', fg: '#888780' };
         const met = has(cv);
-        const label = opt ? (opt.shortLabel || opt.label) : cv;
+        const label = opt ? opt.label : cv;
         return (
           <span key={cv} className={`plan-chip ${met ? 'met' : 'unmet'}`}
             title={met ? '등록됨' : '아직 등록 안 됨'}
@@ -2507,7 +2507,7 @@ function PlanView({ plan, channels, onSetDay, items, currentMonth, onGoMonth }) 
                 style={{ background: col.bg, color: col.fg }}
                 title={`${c.label} — 끌어서 요일에 놓기`}>
                 <span className="plan-pal-dot" style={{ background: col.fg }} />
-                {c.shortLabel || c.label}
+                {c.label}
               </div>
             );
           })}
@@ -2546,7 +2546,7 @@ function PlanView({ plan, channels, onSetDay, items, currentMonth, onGoMonth }) 
                         onDragEnd={() => { setDragData(null); setDragOverDow(null); }}
                         style={{ background: col.bg, color: col.fg, borderLeftColor: col.fg }}
                         title={c ? c.label : cv}>
-                        {c ? (c.shortLabel || c.label) : cv}
+                        {c ? c.label : cv}
                         <span className="x" onClick={(e) => { e.stopPropagation(); removeFromDay(dow, cv); }} title="삭제">×</span>
                       </div>
                     );
@@ -2559,7 +2559,7 @@ function PlanView({ plan, channels, onSetDay, items, currentMonth, onGoMonth }) 
                         return (
                           <button key={c.value} onClick={() => addToDay(dow, c.value)}>
                             <span className="plan-pal-dot" style={{ background: col.fg }} />
-                            {c.shortLabel || c.label}
+                            {c.label}
                           </button>
                         );
                       })}
