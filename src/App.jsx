@@ -306,6 +306,16 @@ export default function App({ session }) {
 
   useEffect(() => { loadChannels(); }, [loadChannels]);
 
+  // 주간 뷰에서 보고 있는 주에 맞춰 데이터 로드 범위(currentMonth)를 동기화.
+  // → 다른 달의 주로 이동해도 그 주의 콘텐츠가 로드돼 발행 목표 달성(✓) 판정이 정확해진다.
+  useEffect(() => {
+    if (viewMode !== 'week') return;
+    const mid = new Date(weekStart);
+    mid.setDate(mid.getDate() + 3); // 그 주의 수요일이 속한 달 기준 (주 전체가 6주 그리드에 포함됨)
+    const ym = `${mid.getFullYear()}-${String(mid.getMonth() + 1).padStart(2, '0')}`;
+    if (ym !== currentMonth) setCurrentMonth(ym);
+  }, [viewMode, weekStart, currentMonth]);
+
   // ============================================
   // 요일별 발행 계획 (Weekday publishing plan)
   // ============================================
