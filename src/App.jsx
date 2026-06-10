@@ -205,6 +205,29 @@ function MemoView({ text }) {
   );
 }
 
+// 예정일(it.date)보다 며칠 늦게 발행됐는지 — 발행 완료 + 발행일 기록이 있을 때만
+function latePublishDays(it) {
+  if (!it || !it.completed || !it.publishedAt || !it.date) return 0;
+  const pub = String(it.publishedAt).slice(0, 10);
+  const ms = (s) => new Date(s + 'T00:00:00').getTime();
+  const diff = Math.round((ms(pub) - ms(it.date)) / 86400000);
+  return diff > 0 ? diff : 0;
+}
+
+// 늦은 발행 뱃지 (D+N) — 정시·미발행이면 아무것도 안 그림
+function LateBadge({ it, big }) {
+  const n = latePublishDays(it);
+  if (n <= 0) return null;
+  return (
+    <span title={`예정보다 ${n}일 늦게 발행`} style={{
+      display: 'inline-flex', alignItems: 'center', flexShrink: 0, verticalAlign: 'middle',
+      background: '#FBEBD9', color: '#C2700E', fontWeight: 700, textDecoration: 'none',
+      fontSize: big ? 11.5 : 9.5, lineHeight: 1.2, padding: big ? '2px 7px' : '1px 4px',
+      borderRadius: 4, marginRight: big ? 0 : 3, letterSpacing: 0.2
+    }}>D+{n}</span>
+  );
+}
+
 // 레퍼런스 URL 유무 마커 (있음 🔗 / 없음 ⚠️)
 function RefMark({ it }) {
   const has = !!(it.referenceUrl && it.referenceUrl.trim());
@@ -232,6 +255,7 @@ const dbToItem = (row) => ({
   attachments: Array.isArray(row.attachments) ? row.attachments : [],
   description: row.description || '',
   completed: row.completed,
+  publishedAt: row.published_at || null,
   archived: !!row.archived,
   archivedAt: row.archived_at || null,
   archiveReason: row.archive_reason || ''
@@ -255,6 +279,7 @@ const itemToDb = (item, userId) => ({
   attachments: Array.isArray(item.attachments) ? item.attachments : [],
   description: item.description || null,
   completed: !!item.completed,
+  published_at: item.publishedAt || null,
   archived: !!item.archived,
   archived_at: item.archivedAt || null,
   archive_reason: item.archiveReason || null
@@ -699,17 +724,20 @@ export default function App({ session }) {
       const item = items.find(i => i.id === itemId);
       if (!item) return;
       const newCompleted = !item.completed;
-      // 발행(완료)하려면 레퍼런스 URL 필요 — 없으면 막고 수정 모달 열기
-      if (newCompleted && !(item.referenceUrl && item.referenceUrl.trim())) {
-        alert('발행하려면 레퍼런스 URL이 필요해요.\n레퍼런스를 먼저 채워주세요.');
-        setEditingItem({ ...item });
-        setSelectedItem(null);
+      // 발행(완료)하려면 링크 필요 — 발행 URL(발행 후 기록) 또는 레퍼런스 URL 둘 중 하나
+      const hasRef = !!(item.referenceUrl && item.referenceUrl.trim());
+      const hasPubUrl = !!(performance[itemId] && performance[itemId].url && performance[itemId].url.trim());
+      if (newCompleted && !hasRef && !hasPubUrl) {
+        alert('발행하려면 발행 URL이 필요해요.\n"발행 후 기록"에 발행 링크를 넣어주세요.');
+        setSelectedItem({ ...item });
         return;
       }
-      const { error } = await supabase.from('items').update({ completed: newCompleted }).eq('id', itemId);
+      // 발행 완료 시 발행일(오늘) 기록 → 예정일과 비교해 D+N 표시. 취소 시 비움.
+      const publishedAt = newCompleted ? todayDateStr : null;
+      const { error } = await supabase.from('items').update({ completed: newCompleted, published_at: publishedAt }).eq('id', itemId);
       if (error) throw error;
-      setItems(prev => prev.map(i => i.id === itemId ? { ...i, completed: newCompleted } : i));
-      setSelectedItem(prev => prev && prev.id === itemId ? { ...prev, completed: newCompleted } : prev);
+      setItems(prev => prev.map(i => i.id === itemId ? { ...i, completed: newCompleted, publishedAt } : i));
+      setSelectedItem(prev => prev && prev.id === itemId ? { ...prev, completed: newCompleted, publishedAt } : prev);
     } catch (err) {
       alert('업데이트 실패: ' + (err.message || err));
     }
@@ -1390,7 +1418,7 @@ export default function App({ session }) {
                                   setContextMenu({ x: e.clientX, y: e.clientY, item: it });
                                 }}
                               >
-                                {selectMode && (isSelected ? '☑ ' : '☐ ')}<RefMark it={it} />{it.isCore && '★ '}{it.title}
+                                {selectMode && (isSelected ? '☑ ' : '☐ ')}<RefMark it={it} /><LateBadge it={it} />{it.isCore && '★ '}{it.title}
                               </button>
                             );
                           })}
@@ -1619,7 +1647,16 @@ function DetailModal({ item, performance, onClose, onToggleCompleted, onUpdatePe
             <span style={{ width: 8, height: 8, borderRadius: 2, background: channelColor, flexShrink: 0 }} />
             <span>{item.channelName}</span>
           </div>
-          <div style={{ fontSize: 13, color: '#5F5E5A', marginTop: 4 }}>{item.date.replace(/-/g, '.')} {item.time}</div>
+          <div style={{ fontSize: 13, color: '#5F5E5A', marginTop: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span>{item.date.replace(/-/g, '.')} {item.time}</span>
+            {item.completed && item.publishedAt && (() => {
+              const n = latePublishDays(item);
+              const pub = String(item.publishedAt).slice(0, 10).replace(/-/g, '.');
+              return n > 0
+                ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#C2700E' }}><LateBadge it={item} big />{pub} 발행</span>
+                : <span style={{ color: '#3A7D3A' }}>✓ {pub} 발행</span>;
+            })()}
+          </div>
         </div>
 
         <div style={{ padding: '0 22px 4px', borderTop: '0.5px solid rgba(0,0,0,0.06)', paddingTop: 12 }}>
@@ -1669,15 +1706,16 @@ function DetailModal({ item, performance, onClose, onToggleCompleted, onUpdatePe
         <div style={{ padding: '12px 16px 16px', borderTop: '0.5px solid rgba(0,0,0,0.06)' }}>
           {(() => {
             const hasRef = !!(item.referenceUrl && item.referenceUrl.trim());
-            const needRef = !item.completed && !hasRef;
+            const hasPubUrl = !!(performance && performance.url && performance.url.trim());
+            const needLink = !item.completed && !hasRef && !hasPubUrl;
             return (
               <>
-                <button onClick={onToggleCompleted} style={{ width: '100%', background: item.completed ? '#FFFFFF' : (needRef ? '#F0EEE8' : '#1A1A1A'), color: item.completed ? '#5F5E5A' : (needRef ? '#8A7B52' : '#FFFFFF'), border: (item.completed || needRef) ? '0.5px solid rgba(0,0,0,0.18)' : 'none', borderRadius: 10, padding: '14px', cursor: 'pointer', fontSize: 15, fontFamily: 'inherit', fontWeight: 600 }}>
-                  {item.completed ? '발행 취소' : (needRef ? '⚠️ 레퍼런스 추가 후 발행' : '발행 완료')}
+                <button onClick={onToggleCompleted} style={{ width: '100%', background: item.completed ? '#FFFFFF' : (needLink ? '#F0EEE8' : '#1A1A1A'), color: item.completed ? '#5F5E5A' : (needLink ? '#8A7B52' : '#FFFFFF'), border: (item.completed || needLink) ? '0.5px solid rgba(0,0,0,0.18)' : 'none', borderRadius: 10, padding: '14px', cursor: 'pointer', fontSize: 15, fontFamily: 'inherit', fontWeight: 600 }}>
+                  {item.completed ? '발행 취소' : (needLink ? '⚠️ 발행 URL 입력 후 발행' : '발행 완료')}
                 </button>
-                {needRef && (
+                {needLink && (
                   <div style={{ fontSize: 11.5, color: '#A8946A', marginTop: 8, textAlign: 'center' }}>
-                    발행하려면 레퍼런스 URL이 필요해요
+                    위 <b>발행 후 기록 → 발행 URL</b>에 링크를 넣으면 발행 완료할 수 있어요
                   </div>
                 )}
               </>
@@ -2019,8 +2057,8 @@ function EditModal({ item, onSave, onClose }) {
               <div style={{ marginBottom: 8 }}>
                 <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
                   레퍼런스 URL
-                  <span style={{ fontSize: 11, fontWeight: 500, color: hasRef ? '#3A7D3A' : '#B07D2B', background: hasRef ? '#E7F1E8' : '#FBF1DD', borderRadius: 5, padding: '2px 7px' }}>
-                    {hasRef ? '🔗 입력됨' : '발행 전 필요'}
+                  <span style={{ fontSize: 11, fontWeight: 500, color: hasRef ? '#3A7D3A' : '#9A958C', background: hasRef ? '#E7F1E8' : '#F0EEE8', borderRadius: 5, padding: '2px 7px' }}>
+                    {hasRef ? '🔗 입력됨' : '참고용 · 선택'}
                   </span>
                 </label>
                 <textarea
@@ -2031,7 +2069,7 @@ function EditModal({ item, onSave, onClose }) {
                   placeholder={'참고할 링크 (지금 비워둬도 저장돼요)\n여러 개면 한 줄에 하나씩'}
                 />
                 <div style={{ fontSize: 11.5, color: '#A8946A', marginTop: 6 }}>
-                  {hasRef ? '여러 개면 한 줄에 하나씩 적어주세요.' : <>주제만 먼저 저장해도 돼요. <b>발행 완료</b>하려면 레퍼런스가 필요해요.</>}
+                  {hasRef ? '여러 개면 한 줄에 하나씩 적어주세요.' : <>작성에 참고할 링크예요. 비워둬도 돼요. <b>발행 완료</b>는 발행 후 발행 URL만 넣으면 돼요.</>}
                 </div>
               </div>
             );
@@ -2359,7 +2397,7 @@ function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, o
                       <div className="list-item-dot" style={{ background: c.bg }} />
                       <div className="list-item-content">
                         <div className={`list-item-title ${it.completed ? 'completed' : ''}`}>
-                          <RefMark it={it} />{it.isCore && <span style={{ color: '#D4A92E', marginRight: 4 }}>★</span>}
+                          <RefMark it={it} /><LateBadge it={it} />{it.isCore && <span style={{ color: '#D4A92E', marginRight: 4 }}>★</span>}
                           {it.title}
                         </div>
                         <div className="list-item-meta">
@@ -2450,7 +2488,7 @@ function WeekView({ weekStart, setWeekStart, items, plan, showPlanOverlay, dateC
                           {selectMode && <span style={{ fontSize: 15 }}>{isSelected ? '☑' : '☐'}</span>}
                           <span style={{ width: 4, height: 4, borderRadius: '50%', background: c.fg, flexShrink: 0 }} />
                           <span style={{ fontSize: 13, color: it.completed ? '#aaa' : '#1A1A1A', textDecoration: it.completed ? 'line-through' : 'none', flex: 1 }}>
-                            <RefMark it={it} />{it.isCore && '★ '}{it.title}
+                            <RefMark it={it} /><LateBadge it={it} />{it.isCore && '★ '}{it.title}
                           </span>
                         </button>
                       );
@@ -2502,7 +2540,7 @@ function WeekView({ weekStart, setWeekStart, items, plan, showPlanOverlay, dateC
                         onDragEnd={handleDragEnd}
                         onClick={(e) => handleItemClick(e, it, isDragging)}
                         onContextMenu={(e) => { if (selectMode) return; onItemContextMenu && onItemContextMenu(e, it); }}
-                      >{selectMode && (isSelected ? '☑ ' : '☐ ')}<RefMark it={it} />{it.isCore && '★ '}{it.title}</button>
+                      >{selectMode && (isSelected ? '☑ ' : '☐ ')}<RefMark it={it} /><LateBadge it={it} />{it.isCore && '★ '}{it.title}</button>
                     );
                   })}
                 </div>
