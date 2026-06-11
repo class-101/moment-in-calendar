@@ -506,7 +506,7 @@ export default function App({ session }) {
     setWeekdayPlan(prev => ({ ...prev, [dow]: channelArr }));
     try {
       const { error } = await supabase.from('weekday_plan')
-        .upsert({ dow, channels: channelArr, updated_at: new Date().toISOString() });
+        .upsert({ dow, channels: channelArr, updated_at: new Date().toISOString() }, { onConflict: 'dow' });
       if (error) throw error;
     } catch (err) {
       alert('발행 계획 저장 실패: ' + (err.message || err));
@@ -636,7 +636,10 @@ export default function App({ session }) {
         ...item,
         id: `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         title: item.title + ' (복제)',
-        completed: false
+        completed: false,
+        publishedAt: null,   // 복제본은 미발행 — 발행일·준비 상태 초기화
+        planned: false,
+        notionReady: false
       };
       const { error } = await supabase.from('items').insert(itemToDb(newItem, userId));
       if (error) throw error;
@@ -864,7 +867,7 @@ export default function App({ session }) {
             likes: perf.likes ? parseInt(perf.likes, 10) : null,
             saves: perf.saves ? parseInt(perf.saves, 10) : null,
             note: perf.note || null
-          });
+          }, { onConflict: 'item_id' });
         } catch (e) {
           console.error('performance 저장 실패:', e);
         }
@@ -1048,7 +1051,7 @@ export default function App({ session }) {
         .header-row { display: flex; flex-direction: column; gap: 8px; margin-bottom: 1rem; }
         .header-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
         .header-nav { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-        .header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+        .header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 1; flex-wrap: wrap; justify-content: flex-end; }
         .month-title { font-size: 20px; font-weight: 600; margin: 0 0 2px; }
         .user-email { font-size: 12px; color: #5F5E5A; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -1137,11 +1140,11 @@ export default function App({ session }) {
 
         /* 발행 목표 오버레이 (월간 점 / 주간 칩) */
         .plan-dots { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 2px 0 3px; }
-        .plan-dot { width: 9px; height: 9px; border-radius: 50%; box-sizing: border-box; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); }
+        .plan-dot { width: 9px; height: 9px; border-radius: 50%; box-sizing: border-box; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.16); }
         .plan-dot.unmet { opacity: 0.4; }
         .plan-chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 0 0 8px; }
         .plan-chips-label { font-size: 9.5px; color: #B0AEA6; font-weight: 600; letter-spacing: 0.4px; margin-right: 1px; }
-        .plan-chip { font-size: 10.5px; line-height: 1.4; padding: 2px 7px; border-radius: 9px; border: 1px solid transparent; font-weight: 500; white-space: nowrap; }
+        .plan-chip { font-size: 10.5px; line-height: 1.35; padding: 2px 7px; border-radius: 9px; border: 1px solid transparent; font-weight: 500; white-space: normal; word-break: keep-all; max-width: 100%; }
         .plan-chip.unmet { opacity: 0.5; }
 
         /* 발행 계획 보드 */
@@ -1675,8 +1678,8 @@ function DetailModal({ item, performance, onClose, onToggleCompleted, onToggleFl
   const channelColor = COLORS[item.channel]?.bg || '#888780';
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content detail-modal" onClick={(e) => e.stopPropagation()} style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 12px 12px 16px', borderBottom: '0.5px solid rgba(0,0,0,0.06)' }}>
+      <div className="modal-content detail-modal" onClick={(e) => e.stopPropagation()} style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 12px 12px 16px', borderBottom: '0.5px solid rgba(0,0,0,0.06)', flexShrink: 0 }}>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: 22, cursor: 'pointer', color: '#1A1A1A', padding: 4, lineHeight: 1 }}>×</button>
           <div style={{ position: 'relative' }}>
             <button onClick={(e) => { e.stopPropagation(); setMoreMenuOpen(!moreMenuOpen); }} style={{ background: 'transparent', border: 'none', fontSize: 18, cursor: 'pointer', color: '#1A1A1A', padding: '4px 8px', lineHeight: 1, letterSpacing: 2 }}>⋯</button>
@@ -1695,6 +1698,7 @@ function DetailModal({ item, performance, onClose, onToggleCompleted, onToggleFl
           </div>
         </div>
 
+        <div className="detail-scroll" style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
         <div style={{ padding: '20px 22px 16px' }}>
           <h3 style={{ fontSize: 19, fontWeight: 600, margin: '0 0 10px', wordBreak: 'keep-all', lineHeight: 1.4 }}>
             {item.isCore && <span style={{ color: '#D4A92E', marginRight: 6 }}>★</span>}{item.title}
@@ -1766,8 +1770,9 @@ function DetailModal({ item, performance, onClose, onToggleCompleted, onToggleFl
           </div>
           <textarea placeholder="메모" value={performance.note || ''} onChange={(e) => onUpdatePerformance('note', e.target.value)} rows={2} style={{ ...recordInputStyle, marginTop: 8, resize: 'vertical', minHeight: 50 }} />
         </div>
+        </div>{/* /detail-scroll */}
 
-        <div style={{ padding: '12px 16px 16px', borderTop: '0.5px solid rgba(0,0,0,0.06)' }}>
+        <div style={{ padding: '12px 16px 16px', borderTop: '0.5px solid rgba(0,0,0,0.06)', flexShrink: 0 }}>
           {(() => {
             const hasRef = !!(item.referenceUrl && item.referenceUrl.trim());
             const hasPubUrl = !!(performance && performance.url && performance.url.trim());
