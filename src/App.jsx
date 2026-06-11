@@ -228,6 +228,41 @@ function LateBadge({ it, big }) {
   );
 }
 
+// 발행 준비 체크 행 (상세보기 — 기획 완료 / 노션 페이지)
+function CheckRow({ checked, label, onToggle }) {
+  return (
+    <button onClick={onToggle} style={{
+      display: 'flex', alignItems: 'center', gap: 11, width: '100%', padding: '9px 0',
+      background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left'
+    }}>
+      <span style={{
+        width: 21, height: 21, borderRadius: 6, flexShrink: 0,
+        border: checked ? 'none' : '1.5px solid #CFCCC3', background: checked ? '#1A1A1A' : 'transparent',
+        color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13
+      }}>{checked ? '✓' : ''}</span>
+      <span style={{ fontSize: 14.5, color: checked ? '#1A1A1A' : '#5F5E5A', fontWeight: checked ? 500 : 400 }}>{label}</span>
+    </button>
+  );
+}
+
+// 발행 준비 마커 (캘린더·리스트) — 미발행이면서 준비 미완일 때만 작은 점 2개
+// 기획·노션: 완료=초록 채움, 대기=호박색 빈 동그라미. 둘 다 완료/발행됨이면 표시 안 함.
+function PrepMark({ it }) {
+  if (it.completed) return null;
+  if (it.planned && it.notionReady) return null;
+  const dot = (done, name) => (
+    <span title={`${name} ${done ? '완료' : '대기'}`} style={{
+      width: 6, height: 6, borderRadius: '50%', boxSizing: 'border-box', flexShrink: 0,
+      background: done ? '#3A7D3A' : 'transparent', border: done ? 'none' : '1.5px solid #D29B2E'
+    }} />
+  );
+  return (
+    <span style={{ display: 'inline-flex', gap: 2, marginRight: 4, verticalAlign: 'middle', alignItems: 'center' }}>
+      {dot(it.planned, '기획')}{dot(it.notionReady, '노션')}
+    </span>
+  );
+}
+
 // 레퍼런스 URL 유무 마커 (있음 🔗 / 없음 ⚠️)
 function RefMark({ it }) {
   const has = !!(it.referenceUrl && it.referenceUrl.trim());
@@ -256,6 +291,8 @@ const dbToItem = (row) => ({
   description: row.description || '',
   completed: row.completed,
   publishedAt: row.published_at || null,
+  planned: !!row.planned,
+  notionReady: !!row.notion_ready,
   archived: !!row.archived,
   archivedAt: row.archived_at || null,
   archiveReason: row.archive_reason || ''
@@ -280,6 +317,8 @@ const itemToDb = (item, userId) => ({
   description: item.description || null,
   completed: !!item.completed,
   published_at: item.publishedAt || null,
+  planned: !!item.planned,
+  notion_ready: !!item.notionReady,
   archived: !!item.archived,
   archived_at: item.archivedAt || null,
   archive_reason: item.archiveReason || null
@@ -743,6 +782,22 @@ export default function App({ session }) {
     }
   };
 
+  // 발행 준비 체크 (기획 완료 / 노션 페이지) — 낙관적 업데이트
+  const updateItemFlags = async (itemId, patch) => {
+    const dbPatch = {};
+    if (patch.planned !== undefined) dbPatch.planned = patch.planned;
+    if (patch.notionReady !== undefined) dbPatch.notion_ready = patch.notionReady;
+    setItems(prev => prev.map(i => i.id === itemId ? { ...i, ...patch } : i));
+    setSelectedItem(prev => prev && prev.id === itemId ? { ...prev, ...patch } : prev);
+    try {
+      const { error } = await supabase.from('items').update(dbPatch).eq('id', itemId);
+      if (error) throw error;
+    } catch (err) {
+      alert('준비 상태 저장 실패: ' + (err.message || err));
+      await loadMonthData();
+    }
+  };
+
   // ============================================
   // 드래그앤드롭
   // ============================================
@@ -942,7 +997,7 @@ export default function App({ session }) {
       channel: def.value,
       channelName: def.label,
       isCore: false, mainKeyword: '', subKeywords: [], strength: '', asset: '',
-      nextSkill: def.skill || '', referenceUrl: '', attachments: [], description: '', completed: false
+      nextSkill: def.skill || '', referenceUrl: '', attachments: [], description: '', completed: false, planned: false, notionReady: false
     };
   };
 
@@ -1418,7 +1473,7 @@ export default function App({ session }) {
                                   setContextMenu({ x: e.clientX, y: e.clientY, item: it });
                                 }}
                               >
-                                {selectMode && (isSelected ? '☑ ' : '☐ ')}<RefMark it={it} /><LateBadge it={it} />{it.isCore && '★ '}{it.title}
+                                {selectMode && (isSelected ? '☑ ' : '☐ ')}<RefMark it={it} /><LateBadge it={it} /><PrepMark it={it} />{it.isCore && '★ '}{it.title}
                               </button>
                             );
                           })}
@@ -1501,6 +1556,7 @@ export default function App({ session }) {
             performance={performance[selectedItem.id] || {}}
             onClose={() => { setSelectedItem(null); setMoreMenuOpen(false); }}
             onToggleCompleted={() => toggleCompleted(selectedItem.id)}
+            onToggleFlag={(field, value) => updateItemFlags(selectedItem.id, { [field]: value })}
             onUpdatePerformance={(field, value) => updatePerformance(selectedItem.id, field, value)}
             onEdit={() => { setEditingItem({ ...selectedItem }); setSelectedItem(null); setMoreMenuOpen(false); }}
             onDuplicate={() => { duplicateItem(selectedItem.id); setSelectedItem(null); setMoreMenuOpen(false); }}
@@ -1615,7 +1671,7 @@ const navBtnStyle = {
   display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, fontFamily: 'inherit'
 };
 
-function DetailModal({ item, performance, onClose, onToggleCompleted, onUpdatePerformance, onEdit, onDuplicate, onArchive, onDelete, moreMenuOpen, setMoreMenuOpen }) {
+function DetailModal({ item, performance, onClose, onToggleCompleted, onToggleFlag, onUpdatePerformance, onEdit, onDuplicate, onArchive, onDelete, moreMenuOpen, setMoreMenuOpen }) {
   const channelColor = COLORS[item.channel]?.bg || '#888780';
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -1693,7 +1749,15 @@ function DetailModal({ item, performance, onClose, onToggleCompleted, onUpdatePe
           {item.description && <InfoRow label="메모" value={<MemoView text={item.description} />} />}
         </div>
 
-        <div style={{ padding: '12px 22px 16px', borderTop: '0.5px solid rgba(0,0,0,0.06)', marginTop: 12 }}>
+        {!item.completed && onToggleFlag && (
+          <div style={{ padding: '12px 22px 4px', borderTop: '0.5px solid rgba(0,0,0,0.06)', marginTop: 12 }}>
+            <div style={{ fontSize: 12, color: '#888780', fontWeight: 500, marginBottom: 4 }}>발행 준비</div>
+            <CheckRow checked={!!item.planned} label="기획 완료" onToggle={() => onToggleFlag('planned', !item.planned)} />
+            <CheckRow checked={!!item.notionReady} label="노션 페이지 제작" onToggle={() => onToggleFlag('notionReady', !item.notionReady)} />
+          </div>
+        )}
+
+        <div style={{ padding: '12px 22px 16px', borderTop: '0.5px solid rgba(0,0,0,0.06)', marginTop: item.completed ? 12 : 0 }}>
           <div style={{ fontSize: 12, color: '#888780', fontWeight: 500, marginBottom: 10 }}>발행 후 기록</div>
           <input type="url" placeholder="발행 URL" value={performance.url || ''} onChange={(e) => onUpdatePerformance('url', e.target.value)} style={recordInputStyle} />
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
@@ -2397,7 +2461,7 @@ function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, o
                       <div className="list-item-dot" style={{ background: c.bg }} />
                       <div className="list-item-content">
                         <div className={`list-item-title ${it.completed ? 'completed' : ''}`}>
-                          <RefMark it={it} /><LateBadge it={it} />{it.isCore && <span style={{ color: '#D4A92E', marginRight: 4 }}>★</span>}
+                          <RefMark it={it} /><LateBadge it={it} /><PrepMark it={it} />{it.isCore && <span style={{ color: '#D4A92E', marginRight: 4 }}>★</span>}
                           {it.title}
                         </div>
                         <div className="list-item-meta">
@@ -2488,7 +2552,7 @@ function WeekView({ weekStart, setWeekStart, items, plan, showPlanOverlay, dateC
                           {selectMode && <span style={{ fontSize: 15 }}>{isSelected ? '☑' : '☐'}</span>}
                           <span style={{ width: 4, height: 4, borderRadius: '50%', background: c.fg, flexShrink: 0 }} />
                           <span style={{ fontSize: 13, color: it.completed ? '#aaa' : '#1A1A1A', textDecoration: it.completed ? 'line-through' : 'none', flex: 1 }}>
-                            <RefMark it={it} /><LateBadge it={it} />{it.isCore && '★ '}{it.title}
+                            <RefMark it={it} /><LateBadge it={it} /><PrepMark it={it} />{it.isCore && '★ '}{it.title}
                           </span>
                         </button>
                       );
@@ -2540,7 +2604,7 @@ function WeekView({ weekStart, setWeekStart, items, plan, showPlanOverlay, dateC
                         onDragEnd={handleDragEnd}
                         onClick={(e) => handleItemClick(e, it, isDragging)}
                         onContextMenu={(e) => { if (selectMode) return; onItemContextMenu && onItemContextMenu(e, it); }}
-                      >{selectMode && (isSelected ? '☑ ' : '☐ ')}<RefMark it={it} /><LateBadge it={it} />{it.isCore && '★ '}{it.title}</button>
+                      >{selectMode && (isSelected ? '☑ ' : '☐ ')}<RefMark it={it} /><LateBadge it={it} /><PrepMark it={it} />{it.isCore && '★ '}{it.title}</button>
                     );
                   })}
                 </div>
