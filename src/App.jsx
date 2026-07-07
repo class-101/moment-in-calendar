@@ -385,6 +385,18 @@ export default function App({ session }) {
 
   // 우클릭 컨텍스트 메뉴
   const [contextMenu, setContextMenu] = useState(null); // { x, y, item } | null
+
+  // 하단 토스트 (복제됨 등 가벼운 피드백)
+  const [toast, setToast] = useState(null);
+  const toastTimerRef = useRef(null);
+  const showToast = (msg) => {
+    setToast(msg);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 2200);
+  };
+
+  // 마우스가 올라가 있는 콘텐츠 (호버 상태에서 Ctrl+D 복제용)
+  const hoveredIdRef = useRef(null);
   // 보관함 모달
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveItems, setArchiveItems] = useState([]);
@@ -687,11 +699,27 @@ export default function App({ session }) {
       const { error } = await supabase.from('items').insert(itemToDb(newItem, userId));
       if (error) throw error;
       await loadMonthData();
-      setSelectedItem(newItem); // 복제본 상세를 바로 열어 제목 더블클릭 수정으로 이어지게
+      showToast(`복제됨 — ${newItem.title}`); // 노션처럼 조용히 복제, 모달은 안 열림
     } catch (err) {
       alert('복제 실패: ' + (err.message || err));
     }
   };
+
+  // 전역 Ctrl/⌘+D 복제 — 상세보기가 열려 있으면 그 항목, 아니면 마우스 올린 항목
+  useEffect(() => {
+    const h = (e) => {
+      if (!(e.ctrlKey || e.metaKey) || (e.key !== 'd' && e.key !== 'D')) return;
+      const tag = (e.target && e.target.tagName) || '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return; // 입력 중엔 무시
+      if (editingItem) return; // 편집 모달에선 복제 안 함
+      const targetId = selectedItem ? selectedItem.id : hoveredIdRef.current;
+      if (!targetId) return;
+      e.preventDefault(); // 브라우저 북마크 단축키 차단
+      duplicateItem(targetId);
+    };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, [selectedItem, editingItem, items]);
 
   const deleteItem = async (itemId) => {
     try {
@@ -1510,6 +1538,8 @@ export default function App({ session }) {
                                 draggable={!selectMode}
                                 onDragStart={(e) => handleDragStart(e, it.id)}
                                 onDragEnd={handleDragEnd}
+                                onMouseEnter={() => { hoveredIdRef.current = it.id; }}
+                                onMouseLeave={() => { if (hoveredIdRef.current === it.id) hoveredIdRef.current = null; }}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   if (selectMode) { toggleSelect(it.id); return; }
@@ -1547,6 +1577,7 @@ export default function App({ session }) {
             holidays={HOLIDAYS}
             anniversaries={ANNIVERSARIES}
             onItemClick={setSelectedItem}
+            onItemHover={(id) => { hoveredIdRef.current = id; }}
             onItemContextMenu={(e, it) => {
               e.preventDefault();
               e.stopPropagation();
@@ -1574,6 +1605,7 @@ export default function App({ session }) {
             holidays={HOLIDAYS}
             anniversaries={ANNIVERSARIES}
             onItemClick={setSelectedItem}
+            onItemHover={(id) => { hoveredIdRef.current = id; }}
             onItemContextMenu={(e, it) => {
               e.preventDefault();
               e.stopPropagation();
@@ -1710,6 +1742,17 @@ export default function App({ session }) {
             onDelete={deleteFromArchive}
           />
         )}
+
+        {/* 하단 토스트 */}
+        {toast && (
+          <div style={{
+            position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+            background: '#1A1A1A', color: '#FFFFFF', padding: '11px 20px', borderRadius: 12,
+            fontSize: 13.5, fontWeight: 500, zIndex: 3000, boxShadow: '0 6px 20px rgba(0,0,0,0.25)',
+            maxWidth: 'calc(100vw - 40px)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            pointerEvents: 'none'
+          }}>{toast}</div>
+        )}
       </div>
     </div>
   );
@@ -1737,15 +1780,7 @@ function DetailModal({ item, performance, onClose, onToggleCompleted, onToggleFl
 
   // 제목 편집 중엔 Esc가 모달을 닫지 않고 편집만 취소
   useEscClose(titleEditing ? () => { setTitleDraft(item.title); setTitleEditing(false); } : onClose);
-
-  // Ctrl/⌘+D = 복제
-  useEffect(() => {
-    const h = (e) => {
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); onDuplicate && onDuplicate(); }
-    };
-    document.addEventListener('keydown', h);
-    return () => document.removeEventListener('keydown', h);
-  }, [onDuplicate]);
+  // Ctrl/⌘+D 복제는 App 전역 핸들러가 처리 (조용히 복제 + 토스트)
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -2477,7 +2512,7 @@ function DeleteSheet({ itemTitle, onCancel, onConfirm }) {
 // ============================================================
 // 리스트뷰
 // ============================================================
-function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, onItemContextMenu, onAddClick, selectMode, selectedIds, toggleSelect }) {
+function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, onItemHover, onItemContextMenu, onAddClick, selectMode, selectedIds, toggleSelect }) {
   const dayLabelsLocal = ['일', '월', '화', '수', '목', '금', '토'];
   const [yearStr, monthStr] = currentMonth.split('-');
   const yearNum = parseInt(yearStr, 10);
@@ -2607,6 +2642,8 @@ function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, o
                     <button
                       key={it.id}
                       className={`list-item ${isSelected ? 'selected' : ''}`}
+                      onMouseEnter={() => onItemHover && onItemHover(it.id)}
+                      onMouseLeave={() => onItemHover && onItemHover(null)}
                       onClick={() => {
                         if (selectMode) { toggleSelect(it.id); return; }
                         onItemClick(it);
@@ -2640,7 +2677,7 @@ function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, o
   );
 }
 
-function WeekView({ weekStart, setWeekStart, items, plan, showPlanOverlay, dateChannelMap, holidays, anniversaries, onItemClick, onItemContextMenu, draggingId, dragOverDate, handleDragStart, handleDragEnd, handleDragOver, handleDragLeave, handleDrop, isMobile, selectMode, selectedIds, toggleSelect }) {
+function WeekView({ weekStart, setWeekStart, items, plan, showPlanOverlay, dateChannelMap, holidays, anniversaries, onItemClick, onItemHover, onItemContextMenu, draggingId, dragOverDate, handleDragStart, handleDragEnd, handleDragOver, handleDragLeave, handleDrop, isMobile, selectMode, selectedIds, toggleSelect }) {
   const dayLabelsLocal = ['일', '월', '화', '수', '목', '금', '토'];
 
   const weekDates = [];
@@ -2760,6 +2797,8 @@ function WeekView({ weekStart, setWeekStart, items, plan, showPlanOverlay, dateC
                         draggable={!selectMode}
                         onDragStart={(e) => handleDragStart(e, it.id)}
                         onDragEnd={handleDragEnd}
+                        onMouseEnter={() => onItemHover && onItemHover(it.id)}
+                        onMouseLeave={() => onItemHover && onItemHover(null)}
                         onClick={(e) => handleItemClick(e, it, isDragging)}
                         onContextMenu={(e) => { if (selectMode) return; onItemContextMenu && onItemContextMenu(e, it); }}
                       >{selectMode && (isSelected ? '☑ ' : '☐ ')}<RefMark it={it} /><LateBadge it={it} /><PrepMark it={it} />{it.isCore && '★ '}{it.title}</button>
