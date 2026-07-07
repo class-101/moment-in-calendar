@@ -407,6 +407,9 @@ export default function App({ session }) {
 
   // 마우스가 올라가 있는 콘텐츠 (호버 상태에서 Ctrl+D 복제용)
   const hoveredIdRef = useRef(null);
+
+  // 클릭 선택(포커스) — 노션 캘린더처럼 첫 클릭=선택, 다시 클릭/Enter=상세, Ctrl+D=복제, Delete=보관
+  const [focusedId, setFocusedId] = useState(null);
   // 보관함 모달
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveItems, setArchiveItems] = useState([]);
@@ -730,21 +733,57 @@ export default function App({ session }) {
     }
   };
 
-  // 전역 Ctrl/⌘+D 복제 — 상세보기가 열려 있으면 그 항목, 아니면 마우스 올린 항목
+  // 콘텐츠 클릭 — 노션처럼: 첫 클릭=선택, 같은 항목 다시 클릭=상세. 모바일은 탭 한 번에 바로 상세.
+  const activateItem = (it) => {
+    if (isMobile) { setSelectedItem(it); return; }
+    if (focusedId === it.id) { setSelectedItem(it); return; }
+    setFocusedId(it.id);
+    if (typeof sessionStorage !== 'undefined' && !sessionStorage.getItem('mic-focus-hint')) {
+      sessionStorage.setItem('mic-focus-hint', '1');
+      showToast('한 번 더 클릭 = 상세 · Ctrl+D 복제 · Delete 보관');
+    }
+  };
+
+  // 빈 곳 클릭 시 선택 해제
   useEffect(() => {
     const h = (e) => {
-      if (!(e.ctrlKey || e.metaKey) || (e.key !== 'd' && e.key !== 'D')) return;
+      const t = e.target;
+      if (t && t.closest && (t.closest('.cal-item') || t.closest('.week-item') || t.closest('.list-item') || t.closest('.modal-content') || t.closest('.modal-overlay') || t.closest('.bulk-bar'))) return;
+      setFocusedId(null);
+    };
+    document.addEventListener('click', h);
+    return () => document.removeEventListener('click', h);
+  }, []);
+
+  // 전역 키보드 — Ctrl/⌘+D 복제(상세 열림 > 선택 > 호버 순), Enter 상세, Delete 보관, Esc 선택 해제
+  useEffect(() => {
+    const h = (e) => {
       const tag = (e.target && e.target.tagName) || '';
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return; // 입력 중엔 무시
-      if (editingItem) return; // 편집 모달에선 복제 안 함
-      const targetId = selectedItem ? selectedItem.id : hoveredIdRef.current;
-      if (!targetId) return;
-      e.preventDefault(); // 브라우저 북마크 단축키 차단
-      duplicateItem(targetId);
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+      const modalOpen = !!(selectedItem || editingItem || channelMgrOpen || archiveOpen || deleteSheet || archiveSheet || contextMenu);
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
+        if (typing || editingItem) return;
+        const targetId = selectedItem ? selectedItem.id : (focusedId || hoveredIdRef.current);
+        if (!targetId) return;
+        e.preventDefault(); // 브라우저 북마크 단축키 차단
+        duplicateItem(targetId);
+        return;
+      }
+      if (typing || modalOpen || !focusedId) return;
+      if (e.key === 'Enter') {
+        if (e.isComposing || e.keyCode === 229) return;
+        const it = items.find(i => i.id === focusedId);
+        if (it) { e.preventDefault(); setSelectedItem(it); }
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        const it = items.find(i => i.id === focusedId);
+        if (it) { e.preventDefault(); setArchiveSheet({ itemId: it.id, title: it.title }); }
+      } else if (e.key === 'Escape') {
+        setFocusedId(null);
+      }
     };
     document.addEventListener('keydown', h);
     return () => document.removeEventListener('keydown', h);
-  }, [selectedItem, editingItem, items]);
+  }, [selectedItem, editingItem, items, focusedId, channelMgrOpen, archiveOpen, deleteSheet, archiveSheet, contextMenu]);
 
   const deleteItem = async (itemId) => {
     try {
@@ -1559,7 +1598,7 @@ export default function App({ session }) {
                               <button
                                 key={it.id}
                                 className={`cal-item ${it.completed ? 'completed' : ''} ${isDragging ? 'dragging' : ''} ${selectMode ? 'select-mode' : ''}`}
-                                style={{ background: c.bg, color: c.fg, borderLeftColor: c.fg, boxShadow: isSelected ? 'inset 0 0 0 2px #1A1A1A' : 'none' }}
+                                style={{ background: c.bg, color: c.fg, borderLeftColor: c.fg, boxShadow: (isSelected || focusedId === it.id) ? 'inset 0 0 0 2px #1A1A1A' : 'none' }}
                                 draggable={!selectMode}
                                 onDragStart={(e) => handleDragStart(e, it.id)}
                                 onDragEnd={handleDragEnd}
@@ -1568,12 +1607,13 @@ export default function App({ session }) {
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   if (selectMode) { toggleSelect(it.id); return; }
-                                  if (!isDragging) setSelectedItem(it);
+                                  if (!isDragging) activateItem(it);
                                 }}
                                 onContextMenu={(e) => {
                                   if (selectMode) return;
                                   e.preventDefault();
                                   e.stopPropagation();
+                                  setFocusedId(it.id);
                                   setContextMenu({ x: e.clientX, y: e.clientY, item: it });
                                 }}
                               >
@@ -1601,11 +1641,13 @@ export default function App({ session }) {
             dateChannelMap={dateChannelMap}
             holidays={HOLIDAYS}
             anniversaries={ANNIVERSARIES}
-            onItemClick={setSelectedItem}
+            onItemClick={activateItem}
+            focusedId={focusedId}
             onItemHover={(id) => { hoveredIdRef.current = id; }}
             onItemContextMenu={(e, it) => {
               e.preventDefault();
               e.stopPropagation();
+              setFocusedId(it.id);
               setContextMenu({ x: e.clientX, y: e.clientY, item: it });
             }}
             draggingId={draggingId}
@@ -1629,11 +1671,13 @@ export default function App({ session }) {
             currentMonth={currentMonth}
             holidays={HOLIDAYS}
             anniversaries={ANNIVERSARIES}
-            onItemClick={setSelectedItem}
+            onItemClick={activateItem}
+            focusedId={focusedId}
             onItemHover={(id) => { hoveredIdRef.current = id; }}
             onItemContextMenu={(e, it) => {
               e.preventDefault();
               e.stopPropagation();
+              setFocusedId(it.id);
               setContextMenu({ x: e.clientX, y: e.clientY, item: it });
             }}
             onAddClick={(dateStr) => setEditingItem(newItemDefaults(dateStr))}
@@ -2537,7 +2581,7 @@ function DeleteSheet({ itemTitle, onCancel, onConfirm }) {
 // ============================================================
 // 리스트뷰
 // ============================================================
-function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, onItemHover, onItemContextMenu, onAddClick, selectMode, selectedIds, toggleSelect }) {
+function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, onItemHover, focusedId, onItemContextMenu, onAddClick, selectMode, selectedIds, toggleSelect }) {
   const dayLabelsLocal = ['일', '월', '화', '수', '목', '금', '토'];
   const [yearStr, monthStr] = currentMonth.split('-');
   const yearNum = parseInt(yearStr, 10);
@@ -2667,6 +2711,7 @@ function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, o
                     <button
                       key={it.id}
                       className={`list-item ${isSelected ? 'selected' : ''}`}
+                      style={focusedId === it.id ? { boxShadow: 'inset 0 0 0 2px #1A1A1A', borderRadius: 8 } : undefined}
                       onMouseEnter={() => onItemHover && onItemHover(it.id)}
                       onMouseLeave={() => onItemHover && onItemHover(null)}
                       onClick={() => {
@@ -2702,7 +2747,7 @@ function ListView({ items, currentMonth, holidays, anniversaries, onItemClick, o
   );
 }
 
-function WeekView({ weekStart, setWeekStart, items, plan, showPlanOverlay, dateChannelMap, holidays, anniversaries, onItemClick, onItemHover, onItemContextMenu, draggingId, dragOverDate, handleDragStart, handleDragEnd, handleDragOver, handleDragLeave, handleDrop, isMobile, selectMode, selectedIds, toggleSelect }) {
+function WeekView({ weekStart, setWeekStart, items, plan, showPlanOverlay, dateChannelMap, holidays, anniversaries, onItemClick, onItemHover, focusedId, onItemContextMenu, draggingId, dragOverDate, handleDragStart, handleDragEnd, handleDragOver, handleDragLeave, handleDrop, isMobile, selectMode, selectedIds, toggleSelect }) {
   const dayLabelsLocal = ['일', '월', '화', '수', '목', '금', '토'];
 
   const weekDates = [];
@@ -2818,7 +2863,7 @@ function WeekView({ weekStart, setWeekStart, items, plan, showPlanOverlay, dateC
                     return (
                       <button key={it.id}
                         className={`week-item ${it.completed ? 'completed' : ''}`}
-                        style={{ background: c.bg, color: c.fg, opacity: isDragging ? 0.3 : 1, boxShadow: isSelected ? 'inset 0 0 0 2px #1A1A1A' : 'none' }}
+                        style={{ background: c.bg, color: c.fg, opacity: isDragging ? 0.3 : 1, boxShadow: (isSelected || focusedId === it.id) ? 'inset 0 0 0 2px #1A1A1A' : 'none' }}
                         draggable={!selectMode}
                         onDragStart={(e) => handleDragStart(e, it.id)}
                         onDragEnd={handleDragEnd}
