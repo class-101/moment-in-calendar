@@ -658,6 +658,19 @@ export default function App({ session }) {
     }
   };
 
+  // 제목만 빠르게 인라인 수정 (상세보기 더블클릭) — 낙관적 업데이트
+  const renameItem = async (itemId, title) => {
+    setItems(prev => prev.map(i => i.id === itemId ? { ...i, title } : i));
+    setSelectedItem(prev => prev && prev.id === itemId ? { ...prev, title } : prev);
+    try {
+      const { error } = await supabase.from('items').update({ title }).eq('id', itemId);
+      if (error) throw error;
+    } catch (err) {
+      alert('제목 수정 실패: ' + (err.message || err));
+      await loadMonthData();
+    }
+  };
+
   const duplicateItem = async (itemId) => {
     try {
       const item = items.find(i => i.id === itemId);
@@ -674,6 +687,7 @@ export default function App({ session }) {
       const { error } = await supabase.from('items').insert(itemToDb(newItem, userId));
       if (error) throw error;
       await loadMonthData();
+      setSelectedItem(newItem); // 복제본 상세를 바로 열어 제목 더블클릭 수정으로 이어지게
     } catch (err) {
       alert('복제 실패: ' + (err.message || err));
     }
@@ -1594,6 +1608,7 @@ export default function App({ session }) {
             onToggleFlag={(field, value) => updateItemFlags(selectedItem.id, { [field]: value })}
             onUpdatePerformance={(field, value) => updatePerformance(selectedItem.id, field, value)}
             onEdit={() => { setEditingItem({ ...selectedItem }); setSelectedItem(null); setMoreMenuOpen(false); }}
+            onRenameTitle={(t) => renameItem(selectedItem.id, t)}
             onDuplicate={() => { duplicateItem(selectedItem.id); setSelectedItem(null); setMoreMenuOpen(false); }}
             onArchive={() => {
               setMoreMenuOpen(false);
@@ -1706,9 +1721,32 @@ const navBtnStyle = {
   display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, fontFamily: 'inherit'
 };
 
-function DetailModal({ item, performance, onClose, onToggleCompleted, onToggleFlag, onUpdatePerformance, onEdit, onDuplicate, onArchive, onDelete, moreMenuOpen, setMoreMenuOpen }) {
+function DetailModal({ item, performance, onClose, onToggleCompleted, onToggleFlag, onUpdatePerformance, onEdit, onRenameTitle, onDuplicate, onArchive, onDelete, moreMenuOpen, setMoreMenuOpen }) {
   const channelColor = COLORS[item.channel]?.bg || '#888780';
-  useEscClose(onClose);
+
+  // 제목 인라인 수정 (노션처럼 더블클릭 → 바로 편집)
+  const [titleEditing, setTitleEditing] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(item.title);
+  useEffect(() => { setTitleDraft(item.title); setTitleEditing(false); }, [item.id, item.title]);
+  const commitTitle = () => {
+    const t = (titleDraft || '').trim();
+    setTitleEditing(false);
+    if (t && t !== item.title) onRenameTitle && onRenameTitle(t);
+    else setTitleDraft(item.title);
+  };
+
+  // 제목 편집 중엔 Esc가 모달을 닫지 않고 편집만 취소
+  useEscClose(titleEditing ? () => { setTitleDraft(item.title); setTitleEditing(false); } : onClose);
+
+  // Ctrl/⌘+D = 복제
+  useEffect(() => {
+    const h = (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); onDuplicate && onDuplicate(); }
+    };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, [onDuplicate]);
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content detail-modal" onClick={(e) => e.stopPropagation()} style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -1733,9 +1771,29 @@ function DetailModal({ item, performance, onClose, onToggleCompleted, onToggleFl
 
         <div className="detail-scroll" style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
         <div style={{ padding: '20px 22px 16px' }}>
-          <h3 style={{ fontSize: 19, fontWeight: 600, margin: '0 0 10px', wordBreak: 'keep-all', lineHeight: 1.4 }}>
-            {item.isCore && <span style={{ color: '#D4A92E', marginRight: 6 }}>★</span>}{item.title}
-          </h3>
+          {titleEditing ? (
+            <input
+              value={titleDraft}
+              autoFocus
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onFocus={(e) => e.target.select()}
+              onKeyDown={(e) => {
+                if (e.isComposing || e.keyCode === 229) return; // 한글 조합 중 무시
+                if (e.key === 'Enter') { e.preventDefault(); commitTitle(); }
+                else if (e.key === 'Escape') { e.stopPropagation(); setTitleDraft(item.title); setTitleEditing(false); }
+              }}
+              onBlur={commitTitle}
+              style={{ width: '100%', fontSize: 19, fontWeight: 600, fontFamily: 'inherit', color: '#1A1A1A', border: 'none', borderBottom: '2px solid #1A1A1A', outline: 'none', background: 'transparent', padding: '0 0 4px', margin: '0 0 10px', boxSizing: 'border-box', lineHeight: 1.4 }}
+            />
+          ) : (
+            <h3
+              onDoubleClick={() => onRenameTitle && setTitleEditing(true)}
+              title="더블클릭하여 제목 수정 · Ctrl+D 복제"
+              style={{ fontSize: 19, fontWeight: 600, margin: '0 0 10px', wordBreak: 'keep-all', lineHeight: 1.4, cursor: onRenameTitle ? 'text' : 'default' }}
+            >
+              {item.isCore && <span style={{ color: '#D4A92E', marginRight: 6 }}>★</span>}{item.title}
+            </h3>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#5F5E5A' }}>
             <span style={{ width: 8, height: 8, borderRadius: 2, background: channelColor, flexShrink: 0 }} />
             <span>{item.channelName}</span>
