@@ -354,11 +354,21 @@ const itemToDb = (item, userId) => ({
   archive_reason: item.archiveReason || null
 });
 
+// URL 해시에 보던 뷰·달 기억 (#/month/2026-08, #/week/2026-08-09 등) — 새로고침해도 유지
+const _initialHash = (() => {
+  if (typeof window === 'undefined') return null;
+  const m = window.location.hash.match(/^#\/(month|week|list|kpi|plan)\/(\d{4})-(\d{2})(?:-(\d{2}))?$/);
+  if (!m) return null;
+  return { view: m[1], y: parseInt(m[2], 10), mo: parseInt(m[3], 10), d: m[4] ? parseInt(m[4], 10) : null };
+})();
+
 export default function App({ session }) {
   const userId = session.user.id;
   const userEmail = session.user.email;
 
-  const [currentMonth, setCurrentMonth] = useState(todayYM);
+  const [currentMonth, setCurrentMonth] = useState(
+    _initialHash ? `${_initialHash.y}-${String(_initialHash.mo).padStart(2, '0')}` : todayYM
+  );
   const [items, setItems] = useState([]);
   const [performance, setPerformance] = useState({});
   const [loading, setLoading] = useState(true);
@@ -407,18 +417,33 @@ export default function App({ session }) {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
 
-  // 뷰 모드: 'month' | 'week' | 'list' | 'kpi'
+  // 뷰 모드: 'month' | 'week' | 'list' | 'kpi' | 'plan'
   const [viewMode, setViewMode] = useState(() => {
+    if (_initialHash) return _initialHash.view; // 새로고침 시 보던 뷰 유지
     if (typeof window !== 'undefined' && window.innerWidth <= 640) return 'list';
     return 'month';
   });
   const [weekStart, setWeekStart] = useState(() => {
+    if (_initialHash && _initialHash.view === 'week' && _initialHash.d) {
+      return new Date(_initialHash.y, _initialHash.mo - 1, _initialHash.d); // 보던 주 유지
+    }
     const d = new Date();
     const dow = d.getDay();
     d.setDate(d.getDate() - dow); // 일요일 시작
     return d;
   });
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth <= 640 : false);
+
+  // 뷰·달이 바뀔 때마다 URL 해시에 반영 (히스토리 안 쌓임)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const p2 = (n) => String(n).padStart(2, '0');
+    const anchor = viewMode === 'week'
+      ? `${weekStart.getFullYear()}-${p2(weekStart.getMonth() + 1)}-${p2(weekStart.getDate())}`
+      : currentMonth;
+    const h = `#/${viewMode}/${anchor}`;
+    if (window.location.hash !== h) window.history.replaceState(null, '', h);
+  }, [viewMode, currentMonth, weekStart]);
 
   // 검색·필터
   const [searchQuery, setSearchQuery] = useState('');
