@@ -273,6 +273,36 @@ function RefMark({ it }) {
   );
 }
 
+// ============================================================
+// 모달 공통 키보드 훅 (한글 IME 조합 중 Enter 오작동 방지 포함)
+// ============================================================
+// Esc로 닫기
+function useEscClose(onClose) {
+  useEffect(() => {
+    const h = (e) => { if (e.key === 'Escape' && !e.isComposing) { e.stopPropagation(); onClose(); } };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, [onClose]);
+}
+// 확인 시트: Enter=확정 / Esc=취소 (textarea에선 ⌘/Ctrl+Enter만 확정)
+function useConfirmKeys(onConfirm, onCancel) {
+  useEffect(() => {
+    const h = (e) => {
+      if (e.isComposing || e.keyCode === 229) return; // 한글 조합 중 무시
+      if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+      else if (e.key === 'Enter') {
+        const tag = (e.target && e.target.tagName) || '';
+        // 포커스가 버튼이면 그 버튼을 누르게 두고(취소 등), textarea에선 ⌘/Ctrl+Enter만 확정
+        if (tag === 'BUTTON') return;
+        if (tag === 'TEXTAREA' && !(e.metaKey || e.ctrlKey)) return;
+        e.preventDefault(); onConfirm();
+      }
+    };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, [onConfirm, onCancel]);
+}
+
 const dbToItem = (row) => ({
   id: row.id,
   date: row.date,
@@ -651,6 +681,8 @@ export default function App({ session }) {
 
   const deleteItem = async (itemId) => {
     try {
+      // 성과 기록도 함께 영구 삭제 (고아 데이터 방지)
+      await supabase.from('performance').delete().eq('item_id', itemId);
       const { error } = await supabase.from('items').delete().eq('id', itemId);
       if (error) throw error;
       setItems(prev => prev.filter(i => i.id !== itemId));
@@ -732,6 +764,7 @@ export default function App({ session }) {
 
   const deleteFromArchive = async (itemId) => {
     try {
+      await supabase.from('performance').delete().eq('item_id', itemId);
       const { error } = await supabase.from('items').delete().eq('id', itemId);
       if (error) throw error;
       setArchiveItems(prev => prev.filter(i => i.id !== itemId));
@@ -766,10 +799,9 @@ export default function App({ session }) {
       const item = items.find(i => i.id === itemId);
       if (!item) return;
       const newCompleted = !item.completed;
-      // 발행(완료)하려면 링크 필요 — 발행 URL(발행 후 기록) 또는 레퍼런스 URL 둘 중 하나
-      const hasRef = !!(item.referenceUrl && item.referenceUrl.trim());
+      // 발행(완료)하려면 실제 발행 URL 필요 (발행 후 기록) — 레퍼런스는 참고용이라 게이트에서 제외
       const hasPubUrl = !!(performance[itemId] && performance[itemId].url && performance[itemId].url.trim());
-      if (newCompleted && !hasRef && !hasPubUrl) {
+      if (newCompleted && !hasPubUrl) {
         alert('발행하려면 발행 URL이 필요해요.\n"발행 후 기록"에 발행 링크를 넣어주세요.');
         setSelectedItem({ ...item });
         return;
@@ -1264,7 +1296,7 @@ export default function App({ session }) {
               <button onClick={goToday} style={{ ...navBtnStyle, width: 'auto', padding: '6px 10px', fontSize: 12, color: '#5F5E5A' }}>오늘</button>
             </div>
             <div className="header-actions">
-              <button onClick={() => setEditingItem(newItemDefaults(todayDateStr))} style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', borderRadius: 8, padding: '8px 12px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, whiteSpace: 'nowrap' }}>+ 새 콘텐츠</button>
+              <button onClick={() => setEditingItem(newItemDefaults(todayYM === currentMonth ? todayDateStr : `${currentMonth}-01`))} style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', borderRadius: 8, padding: '8px 12px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, whiteSpace: 'nowrap' }}>+ 새 콘텐츠</button>
               <button onClick={() => { if (selectMode) exitSelectMode(); else setSelectMode(true); }} style={{ background: selectMode ? '#1A1A1A' : 'transparent', color: selectMode ? '#FFFFFF' : '#5F5E5A', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', cursor: 'pointer', whiteSpace: 'nowrap' }} title="여러 개 선택">{selectMode ? '✕ 선택 해제' : '✓ 선택'}</button>
               <button onClick={openArchive} style={{ background: 'transparent', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer', whiteSpace: 'nowrap' }} title="보관함">📦 보관함</button>
               <button onClick={() => setChannelMgrOpen(true)} style={{ background: 'transparent', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '6px 10px', fontSize: 12, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer', whiteSpace: 'nowrap' }} title="채널 관리">🎨 채널</button>
@@ -1568,7 +1600,7 @@ export default function App({ session }) {
               setArchiveSheet({ itemId: selectedItem.id, title: selectedItem.title });
               setSelectedItem(null);
             }}
-            onDelete={() => { setMoreMenuOpen(false); setDeleteSheet(selectedItem.id); }}
+            onDelete={() => { setMoreMenuOpen(false); setDeleteSheet(selectedItem.id); setSelectedItem(null); }}
             moreMenuOpen={moreMenuOpen}
             setMoreMenuOpen={setMoreMenuOpen}
           />
@@ -1676,6 +1708,7 @@ const navBtnStyle = {
 
 function DetailModal({ item, performance, onClose, onToggleCompleted, onToggleFlag, onUpdatePerformance, onEdit, onDuplicate, onArchive, onDelete, moreMenuOpen, setMoreMenuOpen }) {
   const channelColor = COLORS[item.channel]?.bg || '#888780';
+  useEscClose(onClose);
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content detail-modal" onClick={(e) => e.stopPropagation()} style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -1774,9 +1807,8 @@ function DetailModal({ item, performance, onClose, onToggleCompleted, onToggleFl
 
         <div style={{ padding: '12px 16px 16px', borderTop: '0.5px solid rgba(0,0,0,0.06)', flexShrink: 0 }}>
           {(() => {
-            const hasRef = !!(item.referenceUrl && item.referenceUrl.trim());
             const hasPubUrl = !!(performance && performance.url && performance.url.trim());
-            const needLink = !item.completed && !hasRef && !hasPubUrl;
+            const needLink = !item.completed && !hasPubUrl;
             return (
               <>
                 <button onClick={onToggleCompleted} style={{ width: '100%', background: item.completed ? '#FFFFFF' : (needLink ? '#F0EEE8' : '#1A1A1A'), color: item.completed ? '#5F5E5A' : (needLink ? '#8A7B52' : '#FFFFFF'), border: (item.completed || needLink) ? '0.5px solid rgba(0,0,0,0.18)' : 'none', borderRadius: 10, padding: '14px', cursor: 'pointer', fontSize: 15, fontFamily: 'inherit', fontWeight: 600 }}>
@@ -1863,7 +1895,7 @@ function ColorEditor({ color, onChange }) {
   );
 }
 
-function ChannelRow({ ch, index, total, onUpdate, onDelete, onMove }) {
+function ChannelRow({ ch, index, total, onUpdate, onDelete, onMove, onDirtyChange }) {
   const [label, setLabel] = useState(ch.label);
   const [shortLabel, setShortLabel] = useState(ch.shortLabel || '');
   const [skill, setSkill] = useState(ch.skill || '');
@@ -1877,6 +1909,14 @@ function ChannelRow({ ch, index, total, onUpdate, onDelete, onMove }) {
 
   const dirty = label !== ch.label || shortLabel !== (ch.shortLabel || '') ||
     skill !== (ch.skill || '') || color.bg !== ch.bg || color.fg !== ch.fg;
+
+  // 미저장 편집 여부를 부모(채널 관리 모달)에 알림
+  useEffect(() => {
+    onDirtyChange && onDirtyChange(ch.value, dirty);
+    return () => { onDirtyChange && onDirtyChange(ch.value, false); };
+  }, [dirty, ch.value]);
+
+  const doSave = () => onUpdate(ch.value, { label: label.trim() || ch.label, shortLabel: shortLabel.trim(), skill: skill.trim(), bg: color.bg, fg: color.fg });
 
   const arrowBtn = (disabled) => ({
     background: 'transparent', border: 'none', cursor: disabled ? 'default' : 'pointer',
@@ -1894,7 +1934,9 @@ function ChannelRow({ ch, index, total, onUpdate, onDelete, onMove }) {
         </div>
         <button type="button" onClick={() => setOpen(o => !o)} title="색상 변경"
           style={{ width: 24, height: 24, borderRadius: 7, background: color.bg, border: `2px solid ${color.fg}`, cursor: 'pointer', flexShrink: 0 }} />
-        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="채널 이름" style={{ ...chFieldStyle, fontWeight: 500 }} />
+        <input value={label} onChange={(e) => setLabel(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.isComposing && dirty) { e.preventDefault(); doSave(); } }}
+          placeholder="채널 이름" style={{ ...chFieldStyle, fontWeight: 500 }} />
         <button type="button" onClick={() => onDelete(ch.value)} title="삭제"
           style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 15, color: '#C0392B', padding: '4px 4px', flexShrink: 0 }}>🗑️</button>
       </div>
@@ -1928,7 +1970,7 @@ function ChannelRow({ ch, index, total, onUpdate, onDelete, onMove }) {
             onClick={() => { setLabel(ch.label); setShortLabel(ch.shortLabel || ''); setSkill(ch.skill || ''); setColor({ bg: ch.bg, fg: ch.fg }); }}
             style={{ background: 'transparent', border: '0.5px solid rgba(0,0,0,0.22)', borderRadius: 8, padding: '7px 12px', fontSize: 12, fontFamily: 'inherit', color: '#5F5E5A', cursor: 'pointer' }}>되돌리기</button>
           <button type="button"
-            onClick={() => onUpdate(ch.value, { label: label.trim() || ch.label, shortLabel: shortLabel.trim(), skill: skill.trim(), bg: color.bg, fg: color.fg })}
+            onClick={doSave}
             style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontFamily: 'inherit', cursor: 'pointer', fontWeight: 500 }}>저장</button>
         </div>
       )}
@@ -1950,22 +1992,34 @@ function ChannelManagerModal({ channels, onClose, onAdd, onUpdate, onDelete, onM
     resetAdd();
   };
 
+  // 미저장 편집(행 편집 or 추가 중) 보호
+  const dirtyRef = useRef(new Set());
+  const reportDirty = (value, dirty) => { if (dirty) dirtyRef.current.add(value); else dirtyRef.current.delete(value); };
+  const attemptClose = () => {
+    const hasDirty = dirtyRef.current.size > 0 || (adding && (newLabel.trim() || newSkill.trim()));
+    if (hasDirty && !window.confirm('저장하지 않은 채널 변경이 있어요. 닫을까요?')) return;
+    onClose();
+  };
+  useEscClose(attemptClose);
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={attemptClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ padding: 0, overflow: 'hidden', maxWidth: 520, display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 14px 14px 20px', borderBottom: '0.5px solid rgba(0,0,0,0.06)' }}>
           <h3 style={{ fontSize: 17, fontWeight: 600, margin: 0 }}>채널 관리</h3>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: 22, cursor: 'pointer', color: '#1A1A1A', padding: 4, lineHeight: 1 }} aria-label="닫기">×</button>
+          <button onClick={attemptClose} style={{ background: 'transparent', border: 'none', fontSize: 22, cursor: 'pointer', color: '#1A1A1A', padding: 4, lineHeight: 1 }} aria-label="닫기">×</button>
         </div>
 
         <div style={{ padding: 20, overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
           {channels.map((ch, i) => (
-            <ChannelRow key={ch.value} ch={ch} index={i} total={channels.length} onUpdate={onUpdate} onDelete={onDelete} onMove={onMove} />
+            <ChannelRow key={ch.value} ch={ch} index={i} total={channels.length} onUpdate={onUpdate} onDelete={onDelete} onMove={onMove} onDirtyChange={reportDirty} />
           ))}
 
           {adding ? (
             <div style={{ background: '#FAF5E8', border: '0.5px solid #E5DCC4', borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <input autoFocus value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="채널 이름 (예: 유튜브 쇼츠)" style={{ ...chFieldStyle, fontWeight: 500 }} />
+              <input autoFocus value={newLabel} onChange={(e) => setNewLabel(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); submitAdd(); } }}
+                placeholder="채널 이름 (예: 유튜브 쇼츠)" style={{ ...chFieldStyle, fontWeight: 500 }} />
               <div style={{ display: 'flex', gap: 8 }}>
                 <select value={newShort} onChange={(e) => setNewShort(e.target.value)} style={chSelectStyle}>
                   <option value="">유형 선택</option>
@@ -1997,6 +2051,36 @@ function EditModal({ item, onSave, onClose }) {
 
   const handleChange = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
+  // 미저장 변경 보호 + 이번 세션에 업로드된(미저장) 첨부 정리
+  const initialRef = useRef(JSON.stringify(item));
+  const formRef = useRef(form); formRef.current = form;
+  const uploadedRef = useRef([]); // 이번 편집 중 업로드한 storage path들
+  const isDirty = () => JSON.stringify(formRef.current) !== initialRef.current;
+  const cleanupUnsavedUploads = () => {
+    const paths = uploadedRef.current;
+    if (paths && paths.length) { supabase.storage.from('attachments').remove(paths).catch(() => {}); }
+  };
+  const attemptClose = () => {
+    if (isDirty() && !window.confirm('저장하지 않은 변경사항이 있어요. 닫을까요?')) return;
+    cleanupUnsavedUploads();
+    onClose();
+  };
+  // Esc = 닫기(변경 시 확인) / ⌘·Ctrl+Enter = 저장 / 일반 Enter = 저장(단, textarea·조합중 제외)
+  useEffect(() => {
+    const h = (e) => {
+      if (e.isComposing || e.keyCode === 229) return;
+      if (e.key === 'Escape') { e.preventDefault(); attemptClose(); }
+      else if (e.key === 'Enter') {
+        const tag = (e.target && e.target.tagName) || '';
+        if (tag === 'TEXTAREA' && !(e.metaKey || e.ctrlKey)) return;
+        e.preventDefault(); handleSaveRef.current();
+      }
+    };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, []);
+  const handleSaveRef = useRef(() => {});
+
   // 첨부파일 업로드 / 제거
   const handleFiles = async (fileList) => {
     const files = Array.from(fileList || []);
@@ -2011,6 +2095,7 @@ function EditModal({ item, onSave, onClose }) {
         if (error) throw error;
         const { data } = supabase.storage.from('attachments').getPublicUrl(path);
         added.push({ name: file.name, url: data.publicUrl, path, size: file.size, type: file.type || '' });
+        uploadedRef.current.push(path); // 미저장 시 정리 대상
       }
       setForm(prev => ({ ...prev, attachments: [...(prev.attachments || []), ...added] }));
     } catch (e) {
@@ -2034,9 +2119,11 @@ function EditModal({ item, onSave, onClose }) {
     }));
   };
   const handleSave = () => {
+    if (uploading) return; // 업로드 중이면 저장 대기
     if (!form.title || !form.title.trim()) { alert('제목을 입력해주세요'); return; }
     onSave({ ...form, referenceUrl: (form.referenceUrl || '').trim() });
   };
+  handleSaveRef.current = handleSave;
 
   const inputStyle = {
     width: '100%',
@@ -2063,12 +2150,12 @@ function EditModal({ item, onSave, onClose }) {
   const labelStyle = { fontSize: 13, color: '#5F5E5A', marginBottom: 6, display: 'block', fontWeight: 500 };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={attemptClose}>
       <div className="modal-content edit-modal" onClick={(e) => e.stopPropagation()} style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {/* 헤더 */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 14px 14px 20px', borderBottom: '0.5px solid rgba(0,0,0,0.06)' }}>
           <h3 style={{ fontSize: 17, fontWeight: 600, margin: 0 }}>{isEdit ? '콘텐츠 수정' : '새 콘텐츠'}</h3>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: 22, cursor: 'pointer', color: '#1A1A1A', padding: 4, lineHeight: 1 }} aria-label="닫기">×</button>
+          <button onClick={attemptClose} style={{ background: 'transparent', border: 'none', fontSize: 22, cursor: 'pointer', color: '#1A1A1A', padding: 4, lineHeight: 1 }} aria-label="닫기">×</button>
         </div>
 
         {/* 본문 (스크롤) */}
@@ -2239,6 +2326,13 @@ function EditModal({ item, onSave, onClose }) {
                 />
               </div>
 
+              {/* 발행 준비 체크 (기획·노션) */}
+              <div>
+                <label style={labelStyle}>발행 준비</label>
+                <CheckRow checked={!!form.planned} label="기획 완료" onToggle={() => handleChange('planned', !form.planned)} />
+                <CheckRow checked={!!form.notionReady} label="노션 페이지 제작" onToggle={() => handleChange('notionReady', !form.notionReady)} />
+              </div>
+
               {/* 토스 스타일 토글 스위치 */}
               <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', padding: '4px 0' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -2302,6 +2396,7 @@ function EditModal({ item, onSave, onClose }) {
 
 
 function DeleteSheet({ itemTitle, onCancel, onConfirm }) {
+  useConfirmKeys(onConfirm, onCancel);
   return (
     <div onClick={onCancel} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 2000, animation: 'sheetFadeIn 0.2s ease-out' }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, width: '100%', maxWidth: 480, padding: '24px 20px 28px', boxSizing: 'border-box', animation: 'sheetSlideUp 0.25s ease-out' }}>
@@ -3214,6 +3309,7 @@ function ContextMenu({ x, y, actions, onClose }) {
 // ============================================================
 function ArchiveSheet({ itemTitle, onCancel, onConfirm }) {
   const [reason, setReason] = useState('');
+  useConfirmKeys(() => onConfirm(reason), onCancel);
   const presets = ['자산 부족', '시즌 지남', '다양성 위반', '우선순위 밀림', '아이디어만 보존'];
 
   return (
@@ -3305,6 +3401,7 @@ function ArchiveSheet({ itemTitle, onCancel, onConfirm }) {
 // 보관함 모달
 // ============================================================
 function ArchiveModal({ items, loading, onClose, onRestore, onDelete }) {
+  useEscClose(onClose);
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560, padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
