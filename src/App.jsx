@@ -2699,11 +2699,15 @@ function PlanView({ plan, channels, onSetDay, isMobile }) {
   // 존재하는 채널만 (삭제된 채널 자동 정리)
   const planFor = (dow) => ((plan && plan[dow]) || []).filter(cv => chById[cv]);
 
-  const dropOn = (dow) => {
+  // 드롭 시 채널/출발요일은 dataTransfer에서 읽는다 (React 상태 타이밍에 의존하지 않음 → 드래그 안정성)
+  const dropOn = (dow, raw) => {
     setDragOverDow(null);
-    if (!dragData) return;
-    const { channel, fromDow } = dragData;
+    let payload = null;
+    try { payload = raw ? JSON.parse(raw) : null; } catch (e) { payload = null; }
+    if (!payload) payload = dragData; // 폴백
     setDragData(null);
+    if (!payload || !payload.channel) return;
+    const { channel, fromDow } = payload;
     const target = planFor(dow);
     if (!target.includes(channel)) onSetDay(dow, [...target, channel]);
     if (fromDow != null && fromDow !== dow) {
@@ -2747,7 +2751,7 @@ function PlanView({ plan, channels, onSetDay, isMobile }) {
               <div key={c.value}
                 className={`plan-pal-chip ${dragData && dragData.channel === c.value && dragData.fromDow == null ? 'dragging' : ''}`}
                 draggable
-                onDragStart={(e) => { e.dataTransfer.effectAllowed = 'copyMove'; e.dataTransfer.setData('text/plain', c.value); setDragData({ channel: c.value, fromDow: null }); }}
+                onDragStart={(e) => { e.dataTransfer.effectAllowed = 'copyMove'; e.dataTransfer.setData('text/plain', JSON.stringify({ channel: c.value, fromDow: null })); setDragData({ channel: c.value, fromDow: null }); }}
                 onDragEnd={() => { setDragData(null); setDragOverDow(null); }}
                 style={{ background: col.bg, color: col.fg }}
                 title={`${c.label} — 끌어서 요일에 놓기`}>
@@ -2771,7 +2775,7 @@ function PlanView({ plan, channels, onSetDay, isMobile }) {
                 className={`plan-col ${dragOverDow === dow ? 'over' : ''}`}
                 onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverDow !== dow) setDragOverDow(dow); }}
                 onDragLeave={(e) => { if (e.currentTarget.contains(e.relatedTarget)) return; setDragOverDow(d => d === dow ? null : d); }}
-                onDrop={(e) => { e.preventDefault(); dropOn(dow); }}>
+                onDrop={(e) => { e.preventDefault(); dropOn(dow, e.dataTransfer.getData('text/plain')); }}>
                 <div className="plan-col-head">
                   <span className="plan-col-dow" style={{ color: dowColor }}>{dayLabelsLocal[dow]}</span>
                   {dayChannels.length > 0 && <span className="plan-col-count">{dayChannels.length}</span>}
@@ -2787,7 +2791,7 @@ function PlanView({ plan, channels, onSetDay, isMobile }) {
                       <div key={cv}
                         className="plan-day-chip"
                         draggable
-                        onDragStart={(e) => { e.dataTransfer.effectAllowed = 'copyMove'; e.dataTransfer.setData('text/plain', cv); setDragData({ channel: cv, fromDow: dow }); }}
+                        onDragStart={(e) => { e.dataTransfer.effectAllowed = 'copyMove'; e.dataTransfer.setData('text/plain', JSON.stringify({ channel: cv, fromDow: dow })); setDragData({ channel: cv, fromDow: dow }); }}
                         onDragEnd={() => { setDragData(null); setDragOverDow(null); }}
                         style={{ background: col.bg, color: col.fg, borderLeftColor: col.fg }}
                         title={c ? c.label : cv}>
